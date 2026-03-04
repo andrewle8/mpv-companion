@@ -44,8 +44,8 @@ Set an API key to enable. Switch providers in the ⚙ settings panel.
 
 | Provider | Env variable | Recommended model |
 |---|---|---|
-| Google Gemini | `GEMINI_API_KEY` | gemini-2.0-flash (fast, cheap, great vision) |
-| OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
+| Google Gemini | `GEMINI_API_KEY` | gemini-2.5-flash (fast, cheap, great vision) |
+| OpenAI | `OPENAI_API_KEY` | gpt-4.1-mini |
 | Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 |
 
 ```bash

@@ -285,7 +285,7 @@ class CompanionPanel(QWidget):
             env = info["env_key"]
             if env:
                 has_key = bool(os.environ.get(env, ""))
-                label += "  ✓" if has_key else "  (set " + env + ")"
+                label += "  ✓" if has_key else "  (needs setup)"
             self.provider_combo.addItem(label, pid)
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         sl.addWidget(self.provider_combo)
@@ -511,7 +511,11 @@ class CompanionPanel(QWidget):
             self.model_combo.addItems(names)
             self.model_combo.setEnabled(True)
         else:
-            self.model_combo.addItem("No models found — is Ollama running?")
+            if self._provider_id == "ollama":
+                self.model_combo.addItem("No models found — is Ollama running?")
+            else:
+                provider_name = PROVIDERS[self._provider_id]["name"]
+                self.model_combo.addItem(f"No models — check {provider_name} setup")
             self.model_combo.setEnabled(False)
         idx = self.model_combo.findText(current)
         if idx >= 0:
@@ -523,6 +527,13 @@ class CompanionPanel(QWidget):
     def _on_provider_changed(self, index: int):
         pid = self.provider_combo.itemData(index)
         if pid == self._provider_id:
+            return
+        if self.worker and self.worker.isRunning():
+            self.provider_combo.blockSignals(True)
+            self.provider_combo.setCurrentIndex(
+                self.provider_combo.findData(self._provider_id)
+            )
+            self.provider_combo.blockSignals(False)
             return
 
         # Close old client
@@ -536,7 +547,10 @@ class CompanionPanel(QWidget):
 
         # Create new client
         if is_ollama:
-            self.state["llm"] = create_client("ollama", "", base_url=self._ollama_url)
+            self.state["llm"] = create_client(
+                "ollama", self.model_combo.currentText() or DEFAULT_MODEL,
+                base_url=self._ollama_url,
+            )
         else:
             self.state["llm"] = create_client(pid)
 

@@ -189,33 +189,33 @@ PROVIDERS = {
 }
 
 CLOUD_MODELS = {
-    "gemini": ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"],
-    "openai": ["gpt-4o-mini", "gpt-4o"],
-    "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
+    "openai": ["gpt-4.1-mini", "gpt-4o-mini", "o4-mini"],
+    "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"],
 }
 
 
 class GeminiClient:
     """Google Gemini API client with vision support."""
 
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.model = model
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
-        self._api_key = os.environ.get("GEMINI_API_KEY", "")
         self._client = httpx.Client(timeout=90)
 
     def query(self, prompt: str, image_path: str | None, history: list) -> str:
-        if not self._api_key:
-            return "Set GEMINI_API_KEY environment variable to use Gemini."
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            return "Gemini API key not configured. Set GEMINI_API_KEY in your environment."
 
-        parts = []
-        # Add history as text context
+        # Build multi-turn contents array
+        contents = []
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
-            parts.append({"text": f"[{role}]: {msg['content']}"})
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-        parts.append({"text": prompt})
-
+        # Current message with optional image
+        parts: list = [{"text": prompt}]
         if image_path and os.path.exists(image_path):
             parts.append({
                 "inline_data": {
@@ -223,20 +223,45 @@ class GeminiClient:
                     "data": _read_image_b64(image_path),
                 }
             })
+        contents.append({"role": "user", "parts": parts})
 
-        r = self._client.post(
-            f"{self.base_url}/models/{self.model}:generateContent",
-            params={"key": self._api_key},
-            json={
-                "contents": [{"parts": parts}],
-                "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-            },
-        )
-        r.raise_for_status()
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        try:
+            r = self._client.post(
+                f"{self.base_url}/models/{self.model}:generateContent",
+                params={"key": api_key},
+                json={
+                    "contents": contents,
+                    "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                },
+            )
+            r.raise_for_status()
+            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 401:
+                return "Gemini API key is invalid. Check your GEMINI_API_KEY."
+            if code == 429:
+                return "Gemini rate limit reached. Wait a moment and try again."
+            return f"Gemini error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
-        return CLOUD_MODELS["gemini"]
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            return CLOUD_MODELS["gemini"]
+        try:
+            r = self._client.get(
+                f"{self.base_url}/models",
+                params={"key": api_key},
+                timeout=5,
+            )
+            models = [
+                m["name"].removeprefix("models/")
+                for m in r.json().get("models", [])
+                if "generateContent" in str(m.get("supportedGenerationMethods", []))
+            ]
+            return sorted(models) if models else CLOUD_MODELS["gemini"]
+        except Exception:
+            return CLOUD_MODELS["gemini"]
 
     def close(self):
         self._client.close()
@@ -245,15 +270,15 @@ class GeminiClient:
 class OpenAIClient:
     """OpenAI API client with vision support."""
 
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: str = "gpt-4.1-mini"):
         self.model = model
         self.base_url = "https://api.openai.com/v1"
-        self._api_key = os.environ.get("OPENAI_API_KEY", "")
         self._client = httpx.Client(timeout=90)
 
     def query(self, prompt: str, image_path: str | None, history: list) -> str:
-        if not self._api_key:
-            return "Set OPENAI_API_KEY environment variable to use OpenAI."
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return "OpenAI API key not configured. Set OPENAI_API_KEY in your environment."
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -270,16 +295,39 @@ class OpenAIClient:
 
         messages.append({"role": "user", "content": content})
 
-        r = self._client.post(
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self._api_key}"},
-            json={"model": self.model, "messages": messages},
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        try:
+            r = self._client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": self.model, "messages": messages},
+            )
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 401:
+                return "OpenAI API key is invalid. Check your OPENAI_API_KEY."
+            if code == 429:
+                return "OpenAI rate limit reached. Wait a moment and try again."
+            return f"OpenAI error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
-        return CLOUD_MODELS["openai"]
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return CLOUD_MODELS["openai"]
+        try:
+            r = self._client.get(
+                f"{self.base_url}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=5,
+            )
+            models = [
+                m["id"] for m in r.json().get("data", [])
+                if m["id"].startswith(("gpt-4", "gpt-3.5", "o4-", "o3-", "o1-"))
+            ]
+            return sorted(models) if models else CLOUD_MODELS["openai"]
+        except Exception:
+            return CLOUD_MODELS["openai"]
 
     def close(self):
         self._client.close()
@@ -291,12 +339,12 @@ class AnthropicClient:
     def __init__(self, model: str = "claude-sonnet-4-6"):
         self.model = model
         self.base_url = "https://api.anthropic.com/v1"
-        self._api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._client = httpx.Client(timeout=90)
 
     def query(self, prompt: str, image_path: str | None, history: list) -> str:
-        if not self._api_key:
-            return "Set ANTHROPIC_API_KEY environment variable to use Anthropic."
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return "Anthropic API key not configured. Set ANTHROPIC_API_KEY in your environment."
 
         messages = []
         for msg in history:
@@ -316,21 +364,29 @@ class AnthropicClient:
 
         messages.append({"role": "user", "content": content})
 
-        r = self._client.post(
-            f"{self.base_url}/messages",
-            headers={
-                "x-api-key": self._api_key,
-                "anthropic-version": "2023-06-01",
-            },
-            json={
-                "model": self.model,
-                "system": SYSTEM_PROMPT,
-                "messages": messages,
-                "max_tokens": 1024,
-            },
-        )
-        r.raise_for_status()
-        return r.json()["content"][0]["text"]
+        try:
+            r = self._client.post(
+                f"{self.base_url}/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                json={
+                    "model": self.model,
+                    "system": SYSTEM_PROMPT,
+                    "messages": messages,
+                    "max_tokens": 1024,
+                },
+            )
+            r.raise_for_status()
+            return r.json()["content"][0]["text"]
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 401:
+                return "Anthropic API key is invalid. Check your ANTHROPIC_API_KEY."
+            if code == 429:
+                return "Anthropic rate limit reached. Wait a moment and try again."
+            return f"Anthropic error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
         return CLOUD_MODELS["anthropic"]
@@ -342,9 +398,9 @@ class AnthropicClient:
 def create_client(provider: str, model: str = "", **kwargs):
     """Factory to create the right client for a given provider."""
     if provider == "gemini":
-        return GeminiClient(model or "gemini-2.0-flash")
+        return GeminiClient(model or "gemini-2.5-flash")
     elif provider == "openai":
-        return OpenAIClient(model or "gpt-4o-mini")
+        return OpenAIClient(model or "gpt-4.1-mini")
     elif provider == "anthropic":
         return AnthropicClient(model or "claude-sonnet-4-6")
     else:
