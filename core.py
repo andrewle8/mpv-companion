@@ -10,6 +10,7 @@ import os
 import platform
 import socket
 import threading
+import time as _time
 
 import httpx
 
@@ -62,14 +63,29 @@ class MpvIPC:
             if SYSTEM == "Windows":
                 self._pipe.write(encoded)
                 self._pipe.flush()
+                target_id = self._req_id
                 # readline() on named pipes has no timeout — use a thread
-                result_buf = [b""]
-                def _read():
-                    result_buf[0] = self._pipe.readline()
-                t = threading.Thread(target=_read, daemon=True)
-                t.start()
-                t.join(timeout=5.0)
-                raw = result_buf[0]
+                # Loop to skip unsolicited mpv event lines
+                deadline = _time.monotonic() + 5.0
+                while _time.monotonic() < deadline:
+                    result_buf = [b""]
+                    def _read():
+                        result_buf[0] = self._pipe.readline()
+                    t = threading.Thread(target=_read, daemon=True)
+                    t.start()
+                    remaining = max(0.1, deadline - _time.monotonic())
+                    t.join(timeout=remaining)
+                    raw = result_buf[0]
+                    if raw:
+                        try:
+                            parsed = json.loads(raw)
+                            if parsed.get("request_id") == target_id:
+                                return parsed
+                        except json.JSONDecodeError:
+                            pass
+                    else:
+                        break  # timeout or EOF
+                return {}
             else:
                 self._sock.sendall(encoded)
                 raw = b""
@@ -165,8 +181,10 @@ class OllamaClient:
             return "Error: Cannot reach Ollama. Is it running?"
         except httpx.HTTPStatusError as e:
             return f"Error: Ollama HTTP error ({e.response.status_code})."
-        except (KeyError, httpx.TimeoutException) as e:
-            return f"Error: {e}"
+        except httpx.TimeoutException:
+            return "Error: Ollama request timed out. The model may be loading or too slow."
+        except KeyError:
+            return "Error: Ollama returned an unexpected response format."
 
     def list_models(self) -> list[str]:
         try:

@@ -211,8 +211,11 @@ class Companion:
                         path = self._preshot_path
                         self._preshot_path = None
                         self._preshot_ts = 0.0
-                    if path and os.path.exists(path):
-                        os.unlink(path)
+                    if path:
+                        try:
+                            os.unlink(path)
+                        except OSError:
+                            pass
                     console.print("[yellow]History cleared.[/yellow]")
                     continue
 
