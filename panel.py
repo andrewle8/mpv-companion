@@ -38,7 +38,6 @@ from core import (
 SYSTEM = platform.system()
 PANEL_WIDTH = 320
 COLLAPSED_WIDTH = 36
-BASE_HEIGHT = 600  # reference height for scale=1.0
 
 
 # ---------------------------------------------------------------------------
@@ -369,118 +368,111 @@ class CompanionPanel(QWidget):
         self.send_btn.setEnabled(False)
 
     # -- stylesheet ---------------------------------------------------------
-    def _apply_style(self, scale: float = 1.0):
-        s = max(0.65, min(scale, 1.5))  # clamp range
-        self.setStyleSheet(f"""
-            #container {{
+    def _apply_style(self):
+        self.setStyleSheet("""
+            #container {
                 background-color: rgba(18, 18, 22, 225);
-                border-radius: {int(10*s)}px;
+                border-radius: 10px;
                 border: 1px solid rgba(255, 255, 255, 25);
-            }}
-            #collapsedStrip {{
+            }
+            #collapsedStrip {
                 background-color: rgba(18, 18, 22, 225);
-                border-radius: {int(6*s)}px;
+                border-radius: 6px;
                 border: 1px solid rgba(255, 255, 255, 25);
-            }}
-            #settingsPanel {{
+            }
+            #settingsPanel {
                 background-color: rgba(0, 0, 0, 40);
                 border-top: 1px solid rgba(255, 255, 255, 20);
                 border-bottom: 1px solid rgba(255, 255, 255, 20);
-                border-radius: {int(4*s)}px;
-            }}
-            #title {{
+                border-radius: 4px;
+            }
+            #title {
                 color: rgba(255, 255, 255, 200);
-                font-size: {int(13*s)}px;
+                font-size: 13px;
                 font-weight: bold;
-            }}
-            #status {{
+            }
+            #status {
                 color: rgba(255, 255, 255, 100);
-                font-size: {int(11*s)}px;
-            }}
-            QLabel {{
+                font-size: 11px;
+            }
+            QLabel {
                 color: rgba(255, 255, 255, 120);
-                font-size: {int(10*s)}px;
-            }}
-            #chat {{
+                font-size: 10px;
+            }
+            #chat {
                 background-color: rgba(0, 0, 0, 60);
                 color: #e0e0e0;
                 border: none;
-                border-radius: {int(6*s)}px;
-                font-size: {int(13*s)}px;
-                padding: {int(8*s)}px;
+                border-radius: 6px;
+                font-size: 13px;
+                padding: 8px;
                 selection-background-color: rgba(136, 204, 255, 80);
-            }}
-            #inputBar, #urlInput {{
+            }
+            #inputBar, #urlInput {
                 background-color: rgba(255, 255, 255, 10);
                 color: #e0e0e0;
                 border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: {int(6*s)}px;
-                padding: {int(6*s)}px {int(10*s)}px;
-                font-size: {int(13*s)}px;
-            }}
-            #inputBar:focus, #urlInput:focus {{
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 13px;
+            }
+            #inputBar:focus, #urlInput:focus {
                 border: 1px solid rgba(136, 204, 255, 120);
-            }}
-            #inputBar:disabled {{
+            }
+            #inputBar:disabled {
                 background-color: rgba(255, 255, 255, 5);
                 color: rgba(224, 224, 224, 50);
                 border-color: rgba(255, 255, 255, 15);
-            }}
-            #modelCombo {{
+            }
+            #modelCombo {
                 background-color: rgba(255, 255, 255, 10);
                 color: #e0e0e0;
                 border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: {int(6*s)}px;
-                padding: {int(4*s)}px {int(8*s)}px;
-                font-size: {int(12*s)}px;
-            }}
-            #modelCombo QAbstractItemView {{
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            #modelCombo QAbstractItemView {
                 background-color: rgb(30, 30, 35);
                 color: #e0e0e0;
                 selection-background-color: rgba(136, 204, 255, 80);
-            }}
-            QPushButton {{
+            }
+            QPushButton {
                 background-color: rgba(255, 255, 255, 10);
                 color: #88ccff;
                 border: 1px solid rgba(255, 255, 255, 25);
-                border-radius: {int(6*s)}px;
-                font-size: {int(12*s)}px;
-            }}
-            QPushButton:hover {{
+                border-radius: 6px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
                 background-color: rgba(255, 255, 255, 25);
-            }}
-            #sendBtn {{
+            }
+            #sendBtn {
                 background-color: rgba(136, 204, 255, 30);
                 color: #88ccff;
                 border: 1px solid rgba(136, 204, 255, 50);
-                font-size: {int(11*s)}px;
+                font-size: 11px;
                 font-weight: bold;
-                padding: {int(4*s)}px {int(12*s)}px;
-            }}
-            #sendBtn:hover {{
+                padding: 4px 12px;
+            }
+            #sendBtn:hover {
                 background-color: rgba(136, 204, 255, 50);
-            }}
-            #sendBtn:disabled {{
+            }
+            #sendBtn:disabled {
                 background-color: rgba(255, 255, 255, 5);
                 color: rgba(136, 204, 255, 40);
                 border-color: rgba(255, 255, 255, 15);
-            }}
-            #clearBtn {{
-                padding: {int(2*s)}px {int(8*s)}px;
-                font-size: {int(10*s)}px;
+            }
+            #clearBtn {
+                padding: 2px 8px;
+                font-size: 10px;
                 color: rgba(255, 255, 255, 100);
-            }}
-            #refreshBtn {{
-                padding: {int(5*s)}px {int(10*s)}px;
-                font-size: {int(11*s)}px;
-            }}
-        """
-        )
-        # Scale fixed-size buttons
-        btn_size = max(20, int(24 * s))
-        for btn in [self.settings_btn, self.collapse_btn]:
-            btn.setFixedSize(btn_size, btn_size)
-        self.clear_btn.setFixedHeight(btn_size)
+            }
+            #refreshBtn {
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+        """)
 
     # -- connections --------------------------------------------------------
     def _connect_mpv(self):
@@ -600,11 +592,7 @@ class CompanionPanel(QWidget):
             x, y, w, h = rect
             pw = COLLAPSED_WIDTH if self.collapsed else PANEL_WIDTH
             self.move(x + w, y)
-            old_h = self.height()
             self.resize(pw, h)
-            # Re-scale UI if height changed significantly
-            if abs(h - old_h) > 30:
-                self._apply_style(h / BASE_HEIGHT)
 
     # -- thinking animation -------------------------------------------------
     def _start_thinking(self):
