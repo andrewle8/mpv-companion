@@ -31,14 +31,14 @@ pywin32 is not required; named pipe access uses built-in file I/O.
 
 ## Ollama model setup
 
-Recommended (best visual reasoning at 7B class, fits 4090 easily):
+Recommended (default):
 ```bash
-ollama pull qwen2.5-vl:7b
+ollama pull qwen3.5:7b
 ```
 
-Newer option (native multimodal, released March 2026):
+Larger option for better reasoning:
 ```bash
-ollama pull qwen3.5:9b
+ollama pull qwen3.5:14b
 ```
 
 ---
