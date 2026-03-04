@@ -466,6 +466,11 @@ class CompanionPanel(QWidget):
                 border: 1px solid rgba(100, 180, 255, 80);
                 background-color: rgba(255, 255, 255, 8);
             }}
+            #inputBar[readOnly="true"] {{
+                background-color: rgba(255, 255, 255, 3);
+                color: rgba(200, 200, 200, 40);
+                border-color: rgba(255, 255, 255, 8);
+            }}
             #urlInput {{
                 background-color: rgba(255, 255, 255, 6);
                 color: #d4d4d4;
@@ -673,6 +678,9 @@ class CompanionPanel(QWidget):
         self._update_status()
 
     def _pulse_reverse(self):
+        # Don't restart if we were explicitly stopped (stop() emits finished too)
+        if not (self.worker and self.worker.isRunning()):
+            return
         if self._pulse_anim.direction() == QPropertyAnimation.Direction.Forward:
             self._pulse_anim.setDirection(QPropertyAnimation.Direction.Backward)
         else:
@@ -727,24 +735,24 @@ class CompanionPanel(QWidget):
             .replace("\n", "<br>")
         )
         ts_html = (
-            f'<span style="color:rgba(255,255,255,0.35); font-weight:400;'
+            f'<span style="color:#555555; font-weight:400;'
             f' margin-left:6px;">{ts}</span>' if ts else ""
         )
 
         if role == "user":
             self.chat.append(
-                f'<div style="margin-top:14px; background:rgba(100,180,255,0.08);'
+                f'<div style="margin-top:14px; background:#131820;'
                 f' border-radius:8px; padding:8px 10px;">'
-                f'<div style="text-align:right; font-size:11px; color:rgba(255,255,255,0.5);'
+                f'<div style="text-align:right; font-size:11px; color:#808080;'
                 f' margin-bottom:4px;">You{ts_html}</div>'
                 f'<div style="color:#d4d4d4; font-size:14px; line-height:1.6;">{escaped}</div>'
                 f'</div>'
             )
         else:
             self.chat.append(
-                f'<div style="margin-top:14px; border-left:2px solid rgba(125,207,160,0.5);'
+                f'<div style="margin-top:14px; border-left:2px solid #4a7a5c;'
                 f' padding:4px 0 4px 10px;">'
-                f'<div style="font-size:11px; color:rgba(255,255,255,0.5);'
+                f'<div style="font-size:11px; color:#808080;'
                 f' margin-bottom:4px;">Companion{ts_html}</div>'
                 f'<div style="color:#d4d4d4; font-size:14px; line-height:1.6;">{escaped}</div>'
                 f'</div>'

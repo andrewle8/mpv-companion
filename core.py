@@ -79,25 +79,20 @@ class MpvIPC:
                         if not chunk:
                             break
                         raw += chunk
-                        if b"\n" in chunk:
-                            break
+                        # Check all complete lines for our reply
+                        for line in raw.split(b"\n"):
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                parsed = json.loads(line)
+                                if parsed.get("request_id") == self._req_id:
+                                    return parsed
+                            except json.JSONDecodeError:
+                                continue
                     except socket.timeout:
                         break
 
-            target_id = self._req_id
-            lines = [l for l in raw.decode(errors="replace").strip().split("\n") if l]
-            for line in reversed(lines):
-                try:
-                    parsed = json.loads(line)
-                    if parsed.get("request_id") == target_id:
-                        return parsed
-                except json.JSONDecodeError:
-                    continue
-            for line in reversed(lines):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
             return {}
 
     def screenshot(self, path: str) -> bool:
@@ -159,12 +154,19 @@ class OllamaClient:
 
         messages.append(msg)
 
-        r = self._client.post(
-            f"{self.base_url}/api/chat",
-            json={"model": self.model, "messages": messages, "stream": False},
-        )
-        r.raise_for_status()
-        return r.json()["message"]["content"]
+        try:
+            r = self._client.post(
+                f"{self.base_url}/api/chat",
+                json={"model": self.model, "messages": messages, "stream": False},
+            )
+            r.raise_for_status()
+            return r.json()["message"]["content"]
+        except httpx.ConnectError:
+            return "Error: Cannot reach Ollama. Is it running?"
+        except httpx.HTTPStatusError as e:
+            return f"Error: Ollama HTTP error ({e.response.status_code})."
+        except (KeyError, httpx.TimeoutException) as e:
+            return f"Error: {e}"
 
     def list_models(self) -> list[str]:
         try:
@@ -220,7 +222,7 @@ class GeminiClient:
     def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
-            return "Gemini API key not configured. Set GEMINI_API_KEY in your environment."
+            return "Error: Gemini API key not configured. Set GEMINI_API_KEY."
 
         # Build multi-turn contents array
         contents = []
@@ -253,15 +255,19 @@ class GeminiClient:
             r.raise_for_status()
             candidates = r.json().get("candidates", [])
             if not candidates:
-                return "Gemini returned no response (safety filter or content policy)."
-            return candidates[0]["content"]["parts"][0]["text"]
+                return "Error: Gemini returned no response (safety filter)."
+            try:
+                return candidates[0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError):
+                reason = candidates[0].get("finishReason", "unknown")
+                return f"Error: Gemini returned no usable content (reason: {reason})."
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 401:
-                return "Gemini API key is invalid. Check your GEMINI_API_KEY."
+                return "Error: Gemini API key is invalid. Check your GEMINI_API_KEY."
             if code == 429:
-                return "Gemini rate limit reached. Wait a moment and try again."
-            return f"Gemini error ({code}). Try again or switch providers."
+                return "Error: Gemini rate limit reached. Wait a moment and try again."
+            return f"Error: Gemini error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
         api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -297,7 +303,7 @@ class OpenAIClient:
     def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            return "OpenAI API key not configured. Set OPENAI_API_KEY in your environment."
+            return "Error: OpenAI API key not configured. Set OPENAI_API_KEY."
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -327,10 +333,10 @@ class OpenAIClient:
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 401:
-                return "OpenAI API key is invalid. Check your OPENAI_API_KEY."
+                return "Error: OpenAI API key is invalid. Check your OPENAI_API_KEY."
             if code == 429:
-                return "OpenAI rate limit reached. Wait a moment and try again."
-            return f"OpenAI error ({code}). Try again or switch providers."
+                return "Error: OpenAI rate limit reached. Wait a moment and try again."
+            return f"Error: OpenAI error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -365,7 +371,7 @@ class AnthropicClient:
     def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            return "Anthropic API key not configured. Set ANTHROPIC_API_KEY in your environment."
+            return "Error: Anthropic API key not configured. Set ANTHROPIC_API_KEY."
 
         messages = []
         for msg in history:
@@ -402,14 +408,18 @@ class AnthropicClient:
                 },
             )
             r.raise_for_status()
-            return r.json()["content"][0]["text"]
+            content_blocks = r.json().get("content", [])
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    return block["text"]
+            return "Error: Anthropic returned no text content."
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 401:
-                return "Anthropic API key is invalid. Check your ANTHROPIC_API_KEY."
+                return "Error: Anthropic API key is invalid. Check your ANTHROPIC_API_KEY."
             if code == 429:
-                return "Anthropic rate limit reached. Wait a moment and try again."
-            return f"Anthropic error ({code}). Try again or switch providers."
+                return "Error: Anthropic rate limit reached. Wait a moment and try again."
+            return f"Error: Anthropic error ({code}). Try again or switch providers."
 
     def list_models(self) -> list[str]:
         return CLOUD_MODELS["anthropic"]

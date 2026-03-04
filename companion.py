@@ -10,7 +10,6 @@ import tempfile
 import threading
 import time
 
-import httpx
 from pynput import keyboard
 from rich.console import Console
 from rich.panel import Panel
@@ -48,6 +47,13 @@ class Companion:
         ok = self.mpv.screenshot(shot_path)
         if ok:
             with self._frame_lock:
+                # Clean up any unconsumed previous preshot
+                old = self._preshot_path
+                if old and old != shot_path:
+                    try:
+                        os.unlink(old)
+                    except OSError:
+                        pass
                 self._preshot_path = shot_path
                 self._preshot_ts = ts
             mins, secs = int(ts // 60), int(ts % 60)
@@ -97,6 +103,7 @@ class Companion:
         image_paths: list[str] = []
         tmp_dir = tempfile.gettempdir()
 
+        prompt = ""
         try:
             # Seek for context frames; if preshot exists, reuse it for the anchor
             for i, ts in enumerate(context_ts):
@@ -128,10 +135,6 @@ class Companion:
                 prompt = f"[{ts_str}] {user_input}"
 
             response = self.ollama.query(prompt, image_paths or None, self.history)
-        except httpx.HTTPStatusError as e:
-            response = f"Ollama HTTP error: {e.response.status_code}"
-        except httpx.ConnectError:
-            response = "Cannot reach Ollama. Is it running?"
         except Exception as e:
             response = f"Error: {e}"
         finally:
@@ -140,11 +143,17 @@ class Companion:
                     os.unlink(p)
                 except OSError:
                     pass
+            # Clean up preshot if it wasn't added to image_paths
+            if preshot and preshot not in image_paths:
+                try:
+                    os.unlink(preshot)
+                except OSError:
+                    pass
 
         mins, secs = int(t // 60), int(t % 60)
         ts_str = f"{mins:02d}:{secs:02d}"
 
-        if not response.startswith(("Error:", "Ollama HTTP error:", "Cannot reach")):
+        if not response.startswith("Error:"):
             self.history.append({"role": "user", "content": prompt})
             self.history.append({"role": "assistant", "content": response})
 
@@ -201,6 +210,7 @@ class Companion:
                     with self._frame_lock:
                         path = self._preshot_path
                         self._preshot_path = None
+                        self._preshot_ts = 0.0
                     if path and os.path.exists(path):
                         os.unlink(path)
                     console.print("[yellow]History cleared.[/yellow]")
