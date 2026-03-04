@@ -92,41 +92,42 @@ class Companion:
         current_pos = self.mpv.get_time_pos()
         t = preshot_ts if preshot else current_pos
 
-        # Clean up preshot — we'll recapture all 3 frames via seek
-        if preshot and os.path.exists(preshot):
-            os.unlink(preshot)
-
-        # Capture 3 frames spread over 5 seconds for temporal context
-        timestamps = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        # Capture context frames via seek, keep preshot if available
+        raw_ts = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        context_ts = list(dict.fromkeys(raw_ts))  # deduplicate, preserve order
         image_paths: list[str] = []
         tmp_dir = tempfile.gettempdir()
 
-        for i, ts in enumerate(timestamps):
-            self.mpv.seek(ts)
-            time.sleep(0.15)
-            path = os.path.join(tmp_dir, f"mpv_companion_{i}_{int(ts * 1000)}.png")
-            if self.mpv.screenshot(path):
-                image_paths.append(path)
-
-        # Seek back to where the video was playing
-        self.mpv.seek(current_pos)
-
-        mins, secs = int(t // 60), int(t % 60)
-        ts_str = f"{mins:02d}:{secs:02d}"
-
-        console.print(f"[dim]Frames: {len(image_paths)} captured around {ts_str} | Thinking...[/dim]")
-
-        if not self.history:
-            prompt = (
-                f"[System: {SYSTEM_PROMPT}]\n\n"
-                f"Film: {self.media_title}\n"
-                f"Timestamp: {ts_str}\n\n"
-                f"{user_input}"
-            )
-        else:
-            prompt = f"[{ts_str}] {user_input}"
-
         try:
+            # Seek for context frames; if preshot exists, reuse it for the anchor
+            for i, ts in enumerate(context_ts):
+                if ts == t and preshot and os.path.exists(preshot):
+                    image_paths.append(preshot)
+                    continue
+                self.mpv.seek(ts)
+                time.sleep(0.15)
+                path = os.path.join(tmp_dir, f"mpv_companion_{i}_{int(ts * 1000)}.png")
+                if self.mpv.screenshot(path):
+                    image_paths.append(path)
+
+            # Seek back to where the video was playing
+            self.mpv.seek(current_pos)
+
+            mins, secs = int(t // 60), int(t % 60)
+            ts_str = f"{mins:02d}:{secs:02d}"
+
+            console.print(f"[dim]Frames: {len(image_paths)} captured around {ts_str} | Thinking...[/dim]")
+
+            if not self.history:
+                prompt = (
+                    f"[System: {SYSTEM_PROMPT}]\n\n"
+                    f"Film: {self.media_title}\n"
+                    f"Timestamp: {ts_str}\n\n"
+                    f"{user_input}"
+                )
+            else:
+                prompt = f"[{ts_str}] {user_input}"
+
             response = self.ollama.query(prompt, image_paths or None, self.history)
         except httpx.HTTPStatusError as e:
             response = f"Ollama HTTP error: {e.response.status_code}"
@@ -136,15 +137,21 @@ class Companion:
             response = f"Error: {e}"
         finally:
             for p in image_paths:
-                if os.path.exists(p):
+                try:
                     os.unlink(p)
+                except OSError:
+                    pass
 
-        self.history.append({"role": "user", "content": prompt})
-        self.history.append({"role": "assistant", "content": response})
+        mins, secs = int(t // 60), int(t % 60)
+        ts_str = f"{mins:02d}:{secs:02d}"
 
-        max_msgs = MAX_HISTORY_TURNS * 2
-        if len(self.history) > max_msgs:
-            self.history = self.history[-max_msgs:]
+        if not response.startswith(("Error:", "Ollama HTTP error:", "Cannot reach")):
+            self.history.append({"role": "user", "content": prompt})
+            self.history.append({"role": "assistant", "content": response})
+
+            max_msgs = MAX_HISTORY_TURNS * 2
+            if len(self.history) > max_msgs:
+                self.history = self.history[-max_msgs:]
 
         return response, ts_str
 

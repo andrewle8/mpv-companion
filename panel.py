@@ -125,50 +125,56 @@ class QueryWorker(QThread):
             )
             return
 
-        # Capture 3 frames spread over 5 seconds for temporal context
-        timestamps = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        # Capture up to 3 frames spread over 5 seconds for temporal context
+        raw_ts = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        timestamps = list(dict.fromkeys(raw_ts))  # deduplicate, preserve order
         image_paths: list[str] = []
         tmp_dir = tempfile.gettempdir()
 
-        for i, ts in enumerate(timestamps):
-            mpv.seek(ts)
-            time.sleep(0.15)
-            path = os.path.join(tmp_dir, f"mpv_comp_{i}_{int(ts * 1000)}.png")
-            if mpv.screenshot(path):
-                _downscale_image(path)
-                image_paths.append(path)
-
-        # Seek back to original position
-        mpv.seek(t)
-
-        mins, secs = int(t // 60), int(t % 60)
-        ts_str = f"{mins:02d}:{secs:02d}"
-
-        if not s["history"]:
-            prompt = (
-                f"[System: {SYSTEM_PROMPT}]\n\n"
-                f"Film: {s['media_title']}\n"
-                f"Timestamp: {ts_str}\n\n"
-                f"{self.user_input}"
-            )
-        else:
-            prompt = f"[{ts_str}] {self.user_input}"
-
         try:
+            for i, ts in enumerate(timestamps):
+                mpv.seek(ts)
+                time.sleep(0.15)
+                path = os.path.join(tmp_dir, f"mpv_comp_{i}_{int(ts * 1000)}.png")
+                if mpv.screenshot(path):
+                    _downscale_image(path)
+                    image_paths.append(path)
+
+            # Seek back to original position
+            mpv.seek(t)
+
+            mins, secs = int(t // 60), int(t % 60)
+            ts_str = f"{mins:02d}:{secs:02d}"
+
+            if not s["history"]:
+                prompt = (
+                    f"[System: {SYSTEM_PROMPT}]\n\n"
+                    f"Film: {s['media_title']}\n"
+                    f"Timestamp: {ts_str}\n\n"
+                    f"{self.user_input}"
+                )
+            else:
+                prompt = f"[{ts_str}] {self.user_input}"
+
             response = llm.query(prompt, image_paths or None, s["history"])
         except Exception as e:
             response = f"Error: {e}"
+            mins, secs = int(t // 60), int(t % 60)
+            ts_str = f"{mins:02d}:{secs:02d}"
         finally:
             for p in image_paths:
-                if os.path.exists(p):
+                try:
                     os.unlink(p)
+                except OSError:
+                    pass
 
-        s["history"].append({"role": "user", "content": prompt})
-        s["history"].append({"role": "assistant", "content": response})
+        if not response.startswith("Error:"):
+            s["history"].append({"role": "user", "content": prompt})
+            s["history"].append({"role": "assistant", "content": response})
 
-        max_msgs = MAX_HISTORY_TURNS * 2
-        if len(s["history"]) > max_msgs:
-            s["history"][:] = s["history"][-max_msgs:]
+            max_msgs = MAX_HISTORY_TURNS * 2
+            if len(s["history"]) > max_msgs:
+                s["history"][:] = s["history"][-max_msgs:]
 
         self.finished.emit(response, ts_str)
 
@@ -595,11 +601,15 @@ class CompanionPanel(QWidget):
         self._update_status()
 
     def _on_model_changed(self, name: str):
+        if self.worker and self.worker.isRunning():
+            return
         if name and not name.startswith("No models"):
             self.state["llm"].model = name
             self._update_status()
 
     def _on_url_changed(self):
+        if self.worker and self.worker.isRunning():
+            return
         url = self.url_input.text().strip()
         if url:
             self._ollama_url = url.rstrip("/")

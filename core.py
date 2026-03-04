@@ -109,7 +109,7 @@ class MpvIPC:
         return str(result.get("data") or "Unknown")
 
     def seek(self, seconds: float, mode: str = "absolute") -> bool:
-        result = self._send(["seek", str(seconds), mode])
+        result = self._send(["seek", seconds, mode])
         return result.get("error") == "success"
 
     def get_fps(self) -> float:
