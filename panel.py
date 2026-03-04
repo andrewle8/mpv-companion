@@ -206,7 +206,7 @@ class CompanionPanel(QWidget):
         # Snap to mpv on a timer
         self.snap_timer = QTimer()
         self.snap_timer.timeout.connect(self._snap_to_mpv)
-        self.snap_timer.start(500)
+        self.snap_timer.start(100)
 
         # Defer blocking calls past window show
         QTimer.singleShot(0, self._connect_mpv)
@@ -371,105 +371,119 @@ class CompanionPanel(QWidget):
     def _apply_style(self):
         self.setStyleSheet("""
             #container {
-                background-color: rgba(18, 18, 22, 225);
-                border-radius: 10px;
-                border: 1px solid rgba(255, 255, 255, 25);
+                background-color: rgba(15, 15, 20, 235);
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 12);
             }
             #collapsedStrip {
-                background-color: rgba(18, 18, 22, 225);
-                border-radius: 6px;
-                border: 1px solid rgba(255, 255, 255, 25);
+                background-color: rgba(15, 15, 20, 235);
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 12);
             }
             #settingsPanel {
-                background-color: rgba(0, 0, 0, 40);
-                border-top: 1px solid rgba(255, 255, 255, 20);
-                border-bottom: 1px solid rgba(255, 255, 255, 20);
-                border-radius: 4px;
+                background-color: rgba(255, 255, 255, 4);
+                border-top: 1px solid rgba(255, 255, 255, 8);
+                border-bottom: 1px solid rgba(255, 255, 255, 8);
+                border-radius: 6px;
+                margin: 2px 0;
             }
             #title {
-                color: rgba(255, 255, 255, 200);
+                color: rgba(255, 255, 255, 220);
                 font-size: 13px;
-                font-weight: bold;
+                font-weight: 600;
+                letter-spacing: 0.5px;
             }
             #status {
-                color: rgba(255, 255, 255, 100);
-                font-size: 11px;
+                color: rgba(255, 255, 255, 80);
+                font-size: 10px;
+                padding: 2px 0;
             }
             QLabel {
-                color: rgba(255, 255, 255, 120);
+                color: rgba(255, 255, 255, 100);
                 font-size: 10px;
             }
             #chat {
-                background-color: rgba(0, 0, 0, 60);
-                color: #e0e0e0;
+                background-color: rgba(0, 0, 0, 40);
+                color: #d8d8d8;
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
                 font-size: 13px;
-                padding: 8px;
-                selection-background-color: rgba(136, 204, 255, 80);
+                padding: 10px;
+                line-height: 1.5;
+                selection-background-color: rgba(100, 180, 255, 60);
             }
             #inputBar, #urlInput {
-                background-color: rgba(255, 255, 255, 10);
-                color: #e0e0e0;
-                border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: 6px;
-                padding: 6px 10px;
+                background-color: rgba(255, 255, 255, 6);
+                color: #d8d8d8;
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 8px;
+                padding: 8px 12px;
                 font-size: 13px;
             }
             #inputBar:focus, #urlInput:focus {
-                border: 1px solid rgba(136, 204, 255, 120);
+                border: 1px solid rgba(100, 180, 255, 80);
+                background-color: rgba(255, 255, 255, 8);
             }
             #inputBar:disabled {
-                background-color: rgba(255, 255, 255, 5);
-                color: rgba(224, 224, 224, 50);
-                border-color: rgba(255, 255, 255, 15);
+                background-color: rgba(255, 255, 255, 3);
+                color: rgba(200, 200, 200, 40);
+                border-color: rgba(255, 255, 255, 8);
             }
             #modelCombo {
-                background-color: rgba(255, 255, 255, 10);
-                color: #e0e0e0;
-                border: 1px solid rgba(255, 255, 255, 30);
+                background-color: rgba(255, 255, 255, 6);
+                color: #d8d8d8;
+                border: 1px solid rgba(255, 255, 255, 15);
                 border-radius: 6px;
-                padding: 4px 8px;
-                font-size: 12px;
+                padding: 5px 8px;
+                font-size: 11px;
             }
             #modelCombo QAbstractItemView {
-                background-color: rgb(30, 30, 35);
-                color: #e0e0e0;
-                selection-background-color: rgba(136, 204, 255, 80);
+                background-color: rgb(25, 25, 30);
+                color: #d8d8d8;
+                border: 1px solid rgba(255, 255, 255, 12);
+                selection-background-color: rgba(100, 180, 255, 50);
+                padding: 2px;
             }
             QPushButton {
-                background-color: rgba(255, 255, 255, 10);
-                color: #88ccff;
-                border: 1px solid rgba(255, 255, 255, 25);
+                background-color: rgba(255, 255, 255, 6);
+                color: rgba(255, 255, 255, 140);
+                border: 1px solid rgba(255, 255, 255, 12);
                 border-radius: 6px;
-                font-size: 12px;
+                font-size: 11px;
+                padding: 4px 8px;
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 25);
+                background-color: rgba(255, 255, 255, 15);
+                color: rgba(255, 255, 255, 200);
             }
             #sendBtn {
-                background-color: rgba(136, 204, 255, 30);
-                color: #88ccff;
-                border: 1px solid rgba(136, 204, 255, 50);
+                background-color: rgba(100, 180, 255, 25);
+                color: rgba(100, 180, 255, 220);
+                border: 1px solid rgba(100, 180, 255, 40);
                 font-size: 11px;
-                font-weight: bold;
-                padding: 4px 12px;
+                font-weight: 600;
+                padding: 6px 14px;
+                border-radius: 8px;
             }
             #sendBtn:hover {
-                background-color: rgba(136, 204, 255, 50);
+                background-color: rgba(100, 180, 255, 45);
             }
             #sendBtn:disabled {
-                background-color: rgba(255, 255, 255, 5);
-                color: rgba(136, 204, 255, 40);
-                border-color: rgba(255, 255, 255, 15);
+                background-color: rgba(255, 255, 255, 3);
+                color: rgba(100, 180, 255, 30);
+                border-color: rgba(255, 255, 255, 8);
             }
             #clearBtn {
-                padding: 2px 8px;
+                padding: 3px 10px;
                 font-size: 10px;
-                color: rgba(255, 255, 255, 100);
+                color: rgba(255, 255, 255, 70);
+                border: none;
+            }
+            #clearBtn:hover {
+                color: rgba(255, 255, 255, 150);
             }
             #refreshBtn {
-                padding: 5px 10px;
+                padding: 5px 12px;
                 font-size: 11px;
             }
         """)
@@ -653,10 +667,11 @@ class CompanionPanel(QWidget):
             .replace("\n", "<br>")
         )
         self.chat.append(
-            f'<div style="margin-top:8px; padding-bottom:6px; '
-            f'border-bottom:1px solid rgba(255,255,255,15);">'
-            f'<div style="color:{color}; margin-bottom:2px;"><b>{sender}:</b></div>'
-            f'<div style="color:#e0e0e0; line-height:1.5;">{escaped}</div>'
+            f'<div style="margin-top:10px; padding-bottom:8px; '
+            f'border-bottom:1px solid rgba(255,255,255,6);">'
+            f'<div style="color:{color}; font-size:11px; font-weight:600; '
+            f'margin-bottom:4px; opacity:0.85;">{sender}</div>'
+            f'<div style="color:#d0d0d0; font-size:13px; line-height:1.6;">{escaped}</div>'
             f'</div>'
         )
         sb = self.chat.verticalScrollBar()
