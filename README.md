@@ -1,14 +1,16 @@
 # mpv AI Companion
 
-Watch films with a local AI companion. On-demand visual analysis via Ollama + mpv IPC.
+Watch films with a local AI companion. Visual analysis via mpv IPC + LLM.
 Cross-platform: Windows and macOS/Linux.
+
+Each query captures 3 frames spread over 5 seconds (t-5s, t-2.5s, t) to give the AI temporal context about the scene.
 
 ---
 
 ## Requirements
 
 - [mpv](https://mpv.io) installed
-- [Ollama](https://ollama.com) running locally
+- [Ollama](https://ollama.com) running locally (or a cloud API key)
 - Python 3.10+
 
 ---
@@ -17,6 +19,8 @@ Cross-platform: Windows and macOS/Linux.
 
 ```bash
 pip install -r requirements.txt
+# or
+pip install .
 ```
 
 ### macOS note
@@ -41,7 +45,7 @@ ollama pull gemma3:12b         # better quality if you have 16GB+ VRAM
 ollama pull minicpm-v           # excellent vision, 8B
 ```
 
-### Cloud providers (optional)
+### Cloud providers (GUI panel only)
 
 Set an API key to enable. Switch providers in the ⚙ settings panel.
 
@@ -99,23 +103,15 @@ The GUI panel snaps to the right edge of the mpv window, stays on top, and auto-
 
 | Action | Result |
 |---|---|
-| Type question + Enter | Captures current frame and sends to AI |
+| Type question + Enter | Captures 3 frames (5s window) and sends to AI |
+| Ctrl+Space (CLI) | Capture frame at this moment, then type your question |
 | `/clear` | Resets conversation history |
 | `/quit` or Ctrl+C | Exit |
-| ⚙ button (GUI) | Toggle settings — model selector, Ollama URL |
+| ⚙ button (GUI) | Toggle settings — provider, model, Ollama URL |
 | ▶ button (GUI) | Collapse panel to thin strip |
 
 History persists for the full viewing session -- the AI remembers what you discussed earlier.
-Each query sends a text-only history (no images) to keep context lean and inference fast.
-
----
-
-## Roadmap
-
-- [x] Floating PyQt6 side panel
-- [ ] Voice input via Whisper
-- [ ] Movie title auto-detection from filename + TMDB lookup for extra context
-- [ ] Session export to markdown
+Each query sends text-only history (no images) to keep context lean and inference fast.
 
 ---
 
@@ -124,11 +120,12 @@ Each query sends a text-only history (no images) to keep context lean and infere
 ```
 mpv (video player)
   └── IPC socket (Unix socket / Windows named pipe)
-        └── core.py  (MpvIPC, OllamaClient — shared, no GUI deps)
+        └── core.py  (MpvIPC + 4 LLM clients — shared, no GUI deps)
               ├── panel.py   (PyQt6 floating panel — primary)
-              │     ├── model dropdown  (populated from Ollama /api/tags)
+              │     ├── provider/model dropdown
               │     ├── chat display    (QTextEdit, read-only)
               │     ├── input bar       (QLineEdit)
-              │     └── query worker    (QThread, non-blocking)
-              └── companion.py  (CLI mode — terminal fallback)
+              │     ├── query worker    (QThread — seek, capture 3 frames, query)
+              │     └── frame downscale (QImage, max 720px wide)
+              └── companion.py  (CLI mode — Ollama only, terminal fallback)
 ```
