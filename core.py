@@ -28,7 +28,7 @@ else:
     SCREENSHOT_PATH = "/tmp/mpv_companion_frame.png"
     MPV_LAUNCH_CMD = "mpv --input-ipc-server=/tmp/mpvsocket <your_file>"
 
-DEFAULT_MODEL = "qwen3.5:7b"
+DEFAULT_MODEL = "gemma3:4b"
 HOTKEY_DISPLAY = "Ctrl+Shift+A"
 MAX_HISTORY_TURNS = 20
 

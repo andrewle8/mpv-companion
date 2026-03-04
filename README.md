@@ -33,9 +33,12 @@ pywin32 is not required; named pipe access uses built-in file I/O.
 
 ### Ollama (local, default)
 
+A **vision model** is required to analyze video frames. Text-only models (like qwen3.5) will not see what's on screen.
+
 ```bash
-ollama pull qwen3.5:7b        # recommended default
-ollama pull qwen3.5:14b       # larger, better reasoning
+ollama pull gemma3:4b          # recommended default — vision, runs on any machine
+ollama pull gemma3:12b         # better quality if you have 16GB+ VRAM
+ollama pull minicpm-v           # excellent vision, 8B
 ```
 
 ### Cloud providers (optional)
@@ -84,7 +87,7 @@ python companion.py
 
 Options (both modes):
 ```
---model qwen3.5:7b          use a different Ollama model
+--model gemma3:4b           use a different Ollama model
 --ollama-url http://...      if Ollama runs on another machine
 ```
 
