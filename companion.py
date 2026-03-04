@@ -41,6 +41,9 @@ class Companion:
 
     def _on_hotkey(self):
         ts = self.mpv.get_time_pos()
+        if ts is None:
+            console.print("\n[red][Hotkey] Not connected to mpv[/red]")
+            return
         shot_path = os.path.join(
             tempfile.gettempdir(), f"mpv_companion_{int(ts * 1000)}.png"
         )
@@ -95,6 +98,8 @@ class Companion:
 
         # Determine anchor timestamp
         current_pos = self.mpv.get_time_pos()
+        if current_pos is None and not preshot:
+            return "Error: Not connected to mpv.", "00:00"
         t = preshot_ts if preshot else current_pos
 
         # Capture context frames via seek, keep preshot if available
@@ -117,7 +122,8 @@ class Companion:
                     image_paths.append(path)
 
             # Seek back to where the video was playing
-            self.mpv.seek(current_pos)
+            if current_pos is not None:
+                self.mpv.seek(current_pos)
 
             mins, secs = int(t // 60), int(t % 60)
             ts_str = f"{mins:02d}:{secs:02d}"

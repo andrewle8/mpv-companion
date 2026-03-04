@@ -88,6 +88,7 @@ class MpvIPC:
                 return {}
             else:
                 self._sock.sendall(encoded)
+                target_id = self._req_id
                 raw = b""
                 while True:
                     try:
@@ -102,12 +103,24 @@ class MpvIPC:
                                 continue
                             try:
                                 parsed = json.loads(line)
-                                if parsed.get("request_id") == self._req_id:
+                                if parsed.get("request_id") == target_id:
                                     return parsed
                             except json.JSONDecodeError:
                                 continue
                     except socket.timeout:
                         break
+
+                # Final scan of buffered data after timeout
+                for line in raw.split(b"\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        parsed = json.loads(line)
+                        if parsed.get("request_id") == target_id:
+                            return parsed
+                    except json.JSONDecodeError:
+                        continue
 
             return {}
 
@@ -115,9 +128,10 @@ class MpvIPC:
         result = self._send(["screenshot-to-file", path, "video"])
         return result.get("error") == "success"
 
-    def get_time_pos(self) -> float:
+    def get_time_pos(self) -> float | None:
         result = self._send(["get_property", "time-pos"])
-        return float(result.get("data") or 0)
+        data = result.get("data")
+        return float(data) if data is not None else None
 
     def get_media_title(self) -> str:
         result = self._send(["get_property", "media-title"])

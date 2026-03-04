@@ -121,6 +121,8 @@ class QueryWorker(QThread):
 
         try:
             t = mpv.get_time_pos()
+            if t is None:
+                raise ConnectionError("no time position")
         except Exception:
             self.finished.emit(
                 "Not connected to mpv yet. Open a video in mpv first.", "00:00"
@@ -784,6 +786,7 @@ class CompanionPanel(QWidget):
 
     def _quit(self):
         self.snap_timer.stop()
+        self._pulse_anim.finished.disconnect(self._pulse_reverse)
         self._pulse_anim.stop()
         if self.worker and self.worker.isRunning():
             self.worker.finished.disconnect()
