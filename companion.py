@@ -60,7 +60,7 @@ class Companion:
 
     def _start_hotkey_listener(self):
         combo = keyboard.HotKey(
-            keyboard.HotKey.parse("<ctrl>+<shift>+a"),
+            keyboard.HotKey.parse("<ctrl>+<space>"),
             self._on_hotkey,
         )
 
