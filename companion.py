@@ -102,33 +102,25 @@ class Companion:
             return "Error: Not connected to mpv.", "00:00"
         t = preshot_ts if preshot else current_pos
 
-        # Capture context frames via seek, keep preshot if available
-        raw_ts = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
-        context_ts = list(dict.fromkeys(raw_ts))  # deduplicate, preserve order
+        # Capture single frame at current position
         image_paths: list[str] = []
         tmp_dir = tempfile.gettempdir()
 
         prompt = ""
         try:
-            # Seek for context frames; if preshot exists, reuse it for the anchor
-            for i, ts in enumerate(context_ts):
-                if ts == t and preshot and os.path.exists(preshot):
-                    image_paths.append(preshot)
-                    continue
-                self.mpv.seek(ts)
-                time.sleep(0.15)
-                path = os.path.join(tmp_dir, f"mpv_companion_{i}_{int(ts * 1000)}.png")
+            if preshot and os.path.exists(preshot):
+                image_paths.append(preshot)
+            else:
+                # Preshot missing or not used — capture live frame
+                t = current_pos if current_pos is not None else t
+                path = os.path.join(tmp_dir, f"mpv_companion_{int(t * 1000)}.png")
                 if self.mpv.screenshot(path):
                     image_paths.append(path)
-
-            # Seek back to where the video was playing
-            if current_pos is not None:
-                self.mpv.seek(current_pos)
 
             mins, secs = int(t // 60), int(t % 60)
             ts_str = f"{mins:02d}:{secs:02d}"
 
-            console.print(f"[dim]Frames: {len(image_paths)} captured around {ts_str} | Thinking...[/dim]")
+            console.print(f"[dim]Frame captured at {ts_str} | Thinking...[/dim]")
 
             if not self.history:
                 prompt = (

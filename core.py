@@ -26,7 +26,7 @@ else:
     MPV_SOCKET = "/tmp/mpvsocket"
     MPV_LAUNCH_CMD = "mpv --input-ipc-server=/tmp/mpvsocket <your_file>"
 
-DEFAULT_MODEL = "gemma3:12b"
+DEFAULT_MODEL = "huihui_ai/granite3.2-vision-abliterated"
 HOTKEY_DISPLAY = "Ctrl+Space"
 MAX_HISTORY_TURNS = 20
 

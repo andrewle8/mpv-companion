@@ -2,7 +2,7 @@
 
 Ask questions about what you're watching. Grabs frames from mpv over IPC, sends them to an LLM, shows the response in a side panel or terminal.
 
-Works on Windows and macOS. Each query captures 3 frames over a 5-second window so the model can see what just happened, not just a single still.
+Works on Windows and macOS. Each query captures the current frame and sends it to the model.
 
 ## Requirements
 
@@ -24,13 +24,7 @@ pip install .
 
 ## Models
 
-You need a **vision model**. Text-only models won't see anything.
-
-```bash
-ollama pull gemma3:4b          # default, runs on anything
-ollama pull gemma3:12b         # better if you have 16GB+ VRAM
-ollama pull minicpm-v           # solid alternative, 8B
-```
+You need a **vision model**. Text-only models won't see anything. Pick any vision-capable model from [Ollama's library](https://ollama.com/search?c=vision) and switch models in the panel's settings dropdown.
 
 ### Cloud providers (GUI only)
 
@@ -76,7 +70,7 @@ python companion.py          # CLI mode
 
 | | |
 |---|---|
-| Type + Enter | Grabs 3 frames around the current position, sends to the model |
+| Type + Enter | Captures the current frame and sends to the model |
 | Ctrl+Space (CLI) | Pre-capture a frame, then type your question |
 | `/clear` | Reset conversation |
 | `/quit` / Ctrl+C | Exit |

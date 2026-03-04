@@ -14,7 +14,7 @@ import time
 from PyQt6.QtCore import (
     Qt, QTimer, QThread, QPropertyAnimation, QEasingCurve, pyqtSignal,
 )
-from PyQt6.QtGui import QAction, QImage, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QColor, QImage, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -129,23 +129,15 @@ class QueryWorker(QThread):
             )
             return
 
-        # Capture up to 3 frames spread over 5 seconds for temporal context
-        raw_ts = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
-        timestamps = list(dict.fromkeys(raw_ts))  # deduplicate, preserve order
+        # Capture single frame at current position
         image_paths: list[str] = []
         tmp_dir = tempfile.gettempdir()
 
         try:
-            for i, ts in enumerate(timestamps):
-                mpv.seek(ts)
-                time.sleep(0.15)
-                path = os.path.join(tmp_dir, f"mpv_comp_{i}_{int(ts * 1000)}.png")
-                if mpv.screenshot(path):
-                    _downscale_image(path)
-                    image_paths.append(path)
-
-            # Seek back to original position
-            mpv.seek(t)
+            path = os.path.join(tmp_dir, f"mpv_comp_{int(t * 1000)}.png")
+            if mpv.screenshot(path):
+                _downscale_image(path)
+                image_paths.append(path)
 
             mins, secs = int(t // 60), int(t % 60)
             ts_str = f"{mins:02d}:{secs:02d}"
@@ -213,6 +205,20 @@ class _ChatInput(QTextEdit):
         self._on_submit = on_submit
         self.setFixedHeight(56)
         self.setAcceptRichText(False)
+        # Bypass WA_TranslucentBackground: opaque background + white text on viewport
+        self.viewport().setAutoFillBackground(True)
+        vpal = self.viewport().palette()
+        vpal.setColor(vpal.ColorRole.Base, QColor(30, 30, 40))
+        vpal.setColor(vpal.ColorRole.Text, QColor(255, 255, 255))
+        vpal.setColor(vpal.ColorRole.PlaceholderText, QColor(160, 160, 170))
+        self.viewport().setPalette(vpal)
+        # Also set on self for good measure
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(pal.ColorRole.Base, QColor(30, 30, 40))
+        pal.setColor(pal.ColorRole.Text, QColor(255, 255, 255))
+        pal.setColor(pal.ColorRole.PlaceholderText, QColor(160, 160, 170))
+        self.setPalette(pal)
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -419,11 +425,11 @@ class CompanionPanel(QWidget):
 
     # -- stylesheet ---------------------------------------------------------
     def _apply_style(self):
-        font = "-apple-system, 'Segoe UI', sans-serif"
+        font = "'SF Pro Text', 'Segoe UI', sans-serif"
         self.setStyleSheet(f"""
             * {{ font-family: {font}; }}
             #container {{
-                background-color: rgba(15, 15, 20, 235);
+                background-color: rgba(15, 15, 20, 250);
                 border-radius: 12px;
                 border: 1px solid rgba(255, 255, 255, 12);
             }}
@@ -457,16 +463,16 @@ class CompanionPanel(QWidget):
                 selection-background-color: rgba(100, 180, 255, 60);
             }}
             #inputBar {{
-                background-color: rgba(255, 255, 255, 15);
-                color: #f0f0f0;
-                border: 1px solid rgba(255, 255, 255, 15);
+                background-color: rgba(30, 30, 40, 220);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 30);
                 border-radius: 8px;
                 padding: 8px 10px;
                 font-size: 14px;
             }}
             #inputBar:focus {{
                 border: 1px solid rgba(100, 180, 255, 80);
-                background-color: rgba(255, 255, 255, 20);
+                background-color: rgba(30, 30, 40, 240);
             }}
             #inputBar[readOnly="true"] {{
                 background-color: rgba(255, 255, 255, 3);
@@ -719,11 +725,11 @@ class CompanionPanel(QWidget):
 
         self.worker = QueryWorker(self.state, text)
         self.worker.finished.connect(self._on_response)
-        self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
 
     def _on_response(self, response: str, ts: str):
         self._stop_thinking()
+        self.worker = None
         self._append_msg("assistant", response, ts)
         self._input_set_enabled(True)
         self.clear_btn.setEnabled(True)
