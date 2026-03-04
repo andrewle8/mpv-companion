@@ -22,7 +22,6 @@ from core import (
     MAX_HISTORY_TURNS,
     MPV_LAUNCH_CMD,
     MPV_SOCKET,
-    SCREENSHOT_PATH,
     SYSTEM_PROMPT,
     MpvIPC,
     OllamaClient,
@@ -175,8 +174,8 @@ class Companion:
             self.mpv.connect()
             self.media_title = self.mpv.get_media_title()
         except (ConnectionRefusedError, FileNotFoundError, OSError):
-            console.print(f"\n[red]Could not connect to mpv IPC socket.[/red]")
-            console.print(f"[yellow]Launch mpv first:[/yellow]")
+            console.print("\n[red]Could not connect to mpv IPC socket.[/red]")
+            console.print("[yellow]Launch mpv first:[/yellow]")
             console.print(f"  [bold]{MPV_LAUNCH_CMD}[/bold]\n")
             return
 

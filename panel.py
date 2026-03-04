@@ -33,7 +33,6 @@ from core import (
     PROVIDERS,
     SYSTEM_PROMPT,
     MpvIPC,
-    OllamaClient,
     create_client,
 )
 

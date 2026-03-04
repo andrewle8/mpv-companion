@@ -9,7 +9,6 @@ import json
 import os
 import platform
 import socket
-import tempfile
 import threading
 
 import httpx
@@ -21,11 +20,9 @@ SYSTEM = platform.system()
 
 if SYSTEM == "Windows":
     MPV_SOCKET = r"\\.\pipe\mpvsocket"
-    SCREENSHOT_PATH = os.path.join(tempfile.gettempdir(), "mpv_companion_frame.png")
     MPV_LAUNCH_CMD = r"mpv --input-ipc-server=\\.\pipe\mpvsocket <your_file>"
 else:
     MPV_SOCKET = "/tmp/mpvsocket"
-    SCREENSHOT_PATH = "/tmp/mpv_companion_frame.png"
     MPV_LAUNCH_CMD = "mpv --input-ipc-server=/tmp/mpvsocket <your_file>"
 
 DEFAULT_MODEL = "gemma3:4b"
