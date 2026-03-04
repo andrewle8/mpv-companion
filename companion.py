@@ -198,9 +198,11 @@ class Companion:
 
                 if user_input.lower() == "/clear":
                     self.history.clear()
-                    if self._preshot_path and os.path.exists(self._preshot_path):
-                        os.unlink(self._preshot_path)
-                    self._preshot_path = None
+                    with self._frame_lock:
+                        path = self._preshot_path
+                        self._preshot_path = None
+                    if path and os.path.exists(path):
+                        os.unlink(path)
                     console.print("[yellow]History cleared.[/yellow]")
                     continue
 

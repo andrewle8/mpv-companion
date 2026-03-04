@@ -244,7 +244,10 @@ class GeminiClient:
                 },
             )
             r.raise_for_status()
-            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            candidates = r.json().get("candidates", [])
+            if not candidates:
+                return "Gemini returned no response (safety filter or content policy)."
+            return candidates[0]["content"]["parts"][0]["text"]
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 401:

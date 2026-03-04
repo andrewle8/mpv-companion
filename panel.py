@@ -682,6 +682,7 @@ class CompanionPanel(QWidget):
 
         self.worker = QueryWorker(self.state, text)
         self.worker.finished.connect(self._on_response)
+        self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
 
     def _on_response(self, response: str, ts: str):
