@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 """
-mpv-ai-companion
+mpv AI Companion — CLI mode.
 Watch films with a local AI companion via Ollama + mpv IPC.
-Cross-platform: Windows and macOS/Linux.
 """
 
 import argparse
-import base64
-import json
 import os
-import platform
-import socket
 import tempfile
 import threading
 
@@ -20,163 +15,19 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-# ---------------------------------------------------------------------------
-# Platform config
-# ---------------------------------------------------------------------------
-SYSTEM = platform.system()
-
-if SYSTEM == "Windows":
-    MPV_SOCKET = r"\\.\pipe\mpvsocket"
-    SCREENSHOT_PATH = os.path.join(tempfile.gettempdir(), "mpv_companion_frame.png")
-    MPV_LAUNCH_CMD = r"mpv --input-ipc-server=\\.\pipe\mpvsocket <your_file>"
-else:
-    MPV_SOCKET = "/tmp/mpvsocket"
-    SCREENSHOT_PATH = "/tmp/mpv_companion_frame.png"
-    MPV_LAUNCH_CMD = "mpv --input-ipc-server=/tmp/mpvsocket <your_file>"
-
-DEFAULT_MODEL = "qwen3.5:7b"
-HOTKEY_DISPLAY = "Ctrl+Shift+A"
-MAX_HISTORY_TURNS = 20  # keep last N user/assistant pairs
+from core import (
+    DEFAULT_MODEL,
+    HOTKEY_DISPLAY,
+    MAX_HISTORY_TURNS,
+    MPV_LAUNCH_CMD,
+    MPV_SOCKET,
+    SCREENSHOT_PATH,
+    SYSTEM_PROMPT,
+    MpvIPC,
+    OllamaClient,
+)
 
 console = Console()
-
-
-# ---------------------------------------------------------------------------
-# mpv IPC
-# ---------------------------------------------------------------------------
-class MpvIPC:
-    """JSON IPC bridge to a running mpv instance."""
-
-    def __init__(self, path: str):
-        self.path = path
-        self._sock = None
-        self._pipe = None
-        self._lock = threading.Lock()
-        self._req_id = 0
-
-    def connect(self):
-        if SYSTEM == "Windows":
-            # Named pipe -- open as raw bytes
-            self._pipe = open(self.path, "r+b", buffering=0)
-        else:
-            self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self._sock.connect(self.path)
-            self._sock.settimeout(5.0)
-
-    def _send(self, command: list) -> dict:
-        with self._lock:
-            self._req_id += 1
-            payload = json.dumps({"command": command, "request_id": self._req_id}) + "\n"
-            encoded = payload.encode()
-
-            if SYSTEM == "Windows":
-                self._pipe.write(encoded)
-                self._pipe.flush()
-                raw = self._pipe.readline()
-            else:
-                self._sock.sendall(encoded)
-                raw = b""
-                while True:
-                    try:
-                        chunk = self._sock.recv(4096)
-                        if not chunk:
-                            break
-                        raw += chunk
-                        if b"\n" in chunk:
-                            break
-                    except socket.timeout:
-                        break
-
-            # mpv pushes async events alongside responses -- match by request_id
-            target_id = self._req_id
-            lines = [l for l in raw.decode(errors="replace").strip().split("\n") if l]
-            for line in reversed(lines):
-                try:
-                    parsed = json.loads(line)
-                    if parsed.get("request_id") == target_id:
-                        return parsed
-                except json.JSONDecodeError:
-                    continue
-            # Fallback: return last parseable line if no request_id match
-            for line in reversed(lines):
-                try:
-                    return json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-            return {}
-
-    def screenshot(self, path: str) -> bool:
-        result = self._send(["screenshot-to-file", path, "video"])
-        return result.get("error") == "success"
-
-    def get_time_pos(self) -> float:
-        result = self._send(["get_property", "time-pos"])
-        return float(result.get("data") or 0)
-
-    def get_media_title(self) -> str:
-        result = self._send(["get_property", "media-title"])
-        return str(result.get("data") or "Unknown")
-
-    def close(self):
-        try:
-            if self._sock:
-                self._sock.close()
-            if self._pipe:
-                self._pipe.close()
-        except Exception:
-            pass
-
-
-# ---------------------------------------------------------------------------
-# Ollama client
-# ---------------------------------------------------------------------------
-class OllamaClient:
-    """Minimal Ollama /api/chat wrapper with vision support."""
-
-    def __init__(self, model: str, base_url: str = "http://localhost:11434"):
-        self.model = model
-        self.base_url = base_url.rstrip("/")
-
-    def query(self, prompt: str, image_path: str | None, history: list) -> str:
-        messages = list(history)  # text-only history for context
-
-        msg: dict = {"role": "user", "content": prompt}
-        if image_path and os.path.exists(image_path):
-            with open(image_path, "rb") as f:
-                msg["images"] = [base64.b64encode(f.read()).decode()]
-
-        messages.append(msg)
-
-        with httpx.Client(timeout=90) as client:
-            r = client.post(
-                f"{self.base_url}/api/chat",
-                json={"model": self.model, "messages": messages, "stream": False},
-            )
-            r.raise_for_status()
-            return r.json()["message"]["content"]
-
-    def check(self) -> bool:
-        try:
-            with httpx.Client(timeout=5) as client:
-                r = client.get(f"{self.base_url}/api/tags")
-                models = [m["name"] for m in r.json().get("models", [])]
-                return self.model in models or any(
-                    m.startswith(self.model.split(":")[0] + ":") for m in models
-                )
-        except Exception:
-            return False
-
-
-# ---------------------------------------------------------------------------
-# Companion
-# ---------------------------------------------------------------------------
-SYSTEM_PROMPT = (
-    "You are a cinematic AI companion watching a film with the user. "
-    "When shown a video frame, analyze composition, lighting, color, "
-    "cinematography, narrative context, and emotional tone. "
-    "Be conversational, insightful, and concise. "
-    "The user may ask about technique, story, symbolism, or just react to what they see."
-)
 
 
 class Companion:
@@ -185,17 +36,12 @@ class Companion:
         self.ollama = OllamaClient(model, ollama_url)
         self.history: list[dict] = []
         self._frame_lock = threading.Lock()
-        self._preshot_path: str | None = None  # frame captured by hotkey
+        self._preshot_path: str | None = None
         self._preshot_ts: float = 0.0
         self.media_title = "Unknown"
 
-    # ------------------------------------------------------------------
-    # Hotkey
-    # ------------------------------------------------------------------
     def _on_hotkey(self):
-        """Called on background thread when hotkey fires."""
         ts = self.mpv.get_time_pos()
-        # Use a unique path so we don't overwrite a frame mid-read
         shot_path = os.path.join(
             tempfile.gettempdir(), f"mpv_companion_{int(ts * 1000)}.png"
         )
@@ -235,15 +81,11 @@ class Companion:
         listener.start()
         return listener
 
-    # ------------------------------------------------------------------
-    # Query
-    # ------------------------------------------------------------------
     def _query(self, user_input: str):
-        # Decide which frame to use
         with self._frame_lock:
             preshot = self._preshot_path
             preshot_ts = self._preshot_ts
-            self._preshot_path = None  # consume
+            self._preshot_path = None
 
         if preshot:
             image_path = preshot
@@ -258,7 +100,6 @@ class Companion:
 
         console.print(f"[dim]Frame: {ts_str} | Thinking...[/dim]")
 
-        # Inject system context on first message only
         if not self.history:
             prompt = (
                 f"[System: {SYSTEM_PROMPT}]\n\n"
@@ -277,21 +118,19 @@ class Companion:
             response = "Cannot reach Ollama. Is it running?"
         except Exception as e:
             response = f"Error: {e}"
+        finally:
+            if preshot and os.path.exists(preshot):
+                os.unlink(preshot)
 
-        # Store text-only history (no images -- keeps context lean)
         self.history.append({"role": "user", "content": prompt})
         self.history.append({"role": "assistant", "content": response})
 
-        # Trim to avoid context overflow on long sessions
         max_msgs = MAX_HISTORY_TURNS * 2
         if len(self.history) > max_msgs:
             self.history = self.history[-max_msgs:]
 
         return response, ts_str
 
-    # ------------------------------------------------------------------
-    # Main loop
-    # ------------------------------------------------------------------
     def run(self):
         console.print(
             Panel.fit(
@@ -307,7 +146,6 @@ class Companion:
             )
         )
 
-        # Connect to mpv
         console.print("[dim]Connecting to mpv...[/dim]")
         try:
             self.mpv.connect()
@@ -320,7 +158,6 @@ class Companion:
 
         console.print(f"[green]Connected[/green] -- [bold]{self.media_title}[/bold]\n")
 
-        # Start hotkey listener
         listener = self._start_hotkey_listener()
 
         try:
@@ -361,12 +198,10 @@ class Companion:
         finally:
             listener.stop()
             self.mpv.close()
+            self.ollama.close()
             console.print("\n[dim]Companion closed.[/dim]")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
         description="mpv AI Companion -- watch films with a local AI",
@@ -374,18 +209,15 @@ def main():
         epilog=f"Launch mpv first:\n  {MPV_LAUNCH_CMD}",
     )
     parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL,
+        "--model", default=DEFAULT_MODEL,
         help=f"Ollama model name (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
-        "--ollama-url",
-        default="http://localhost:11434",
+        "--ollama-url", default="http://localhost:11434",
         help="Ollama base URL (default: http://localhost:11434)",
     )
     parser.add_argument(
-        "--no-check",
-        action="store_true",
+        "--no-check", action="store_true",
         help="Skip Ollama model availability check",
     )
     args = parser.parse_args()
@@ -397,6 +229,7 @@ def main():
             console.print(f"[red]Model '{args.model}' not found in Ollama.[/red]")
             console.print(f"[yellow]Run: ollama pull {args.model}[/yellow]")
             console.print("[dim]Proceeding anyway -- will fail on first query if not available.[/dim]\n")
+        client.close()
 
     companion = Companion(model=args.model, ollama_url=args.ollama_url)
     companion.run()

@@ -61,16 +61,23 @@ Tip: add an alias or batch script so you never have to type this manually.
 
 ### Step 2 -- Start the companion
 
+**GUI (floating panel):**
+```bash
+python panel.py
+```
+
+**CLI (terminal mode):**
 ```bash
 python companion.py
 ```
 
-Options:
+Options (both modes):
 ```
---model qwen3.5:9b          use a different Ollama model
+--model qwen3.5:7b          use a different Ollama model
 --ollama-url http://...      if Ollama runs on another machine
---no-check                   skip model availability check
 ```
+
+The GUI panel snaps to the right edge of the mpv window, stays on top, and auto-detects all models installed in Ollama via a dropdown.
 
 ---
 
@@ -78,12 +85,11 @@ Options:
 
 | Action | Result |
 |---|---|
-| Press Ctrl+Shift+A | Captures frame immediately at that moment |
-| Type question + Enter | Captures frame at the moment you press Enter |
-| Hotkey then type | Uses the pre-captured frame from hotkey time |
+| Type question + Enter | Captures current frame and sends to AI |
 | `/clear` | Resets conversation history |
-| `/history` | Shows how many turns are in context |
 | `/quit` or Ctrl+C | Exit |
+| ⚙ button (GUI) | Toggle settings — model selector, Ollama URL |
+| ▶ button (GUI) | Collapse panel to thin strip |
 
 History persists for the full viewing session -- the AI remembers what you discussed earlier.
 Each query sends a text-only history (no images) to keep context lean and inference fast.
@@ -92,7 +98,7 @@ Each query sends a text-only history (no images) to keep context lean and infere
 
 ## Roadmap
 
-- [ ] Floating PyQt6 side panel (GUI iteration)
+- [x] Floating PyQt6 side panel
 - [ ] Voice input via Whisper
 - [ ] Movie title auto-detection from filename + TMDB lookup for extra context
 - [ ] Session export to markdown
@@ -104,9 +110,11 @@ Each query sends a text-only history (no images) to keep context lean and infere
 ```
 mpv (video player)
   └── IPC socket (Unix socket / Windows named pipe)
-        └── companion.py
-              ├── pynput  (global hotkey listener, background thread)
-              ├── mpv IPC (screenshot-to-file + metadata)
-              └── Ollama /api/chat  (vision model, streaming off)
-                    └── rich  (terminal UI)
+        └── core.py  (MpvIPC, OllamaClient — shared, no GUI deps)
+              ├── panel.py   (PyQt6 floating panel — primary)
+              │     ├── model dropdown  (populated from Ollama /api/tags)
+              │     ├── chat display    (QTextEdit, read-only)
+              │     ├── input bar       (QLineEdit)
+              │     └── query worker    (QThread, non-blocking)
+              └── companion.py  (CLI mode — terminal fallback)
 ```
