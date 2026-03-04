@@ -8,6 +8,7 @@ import argparse
 import os
 import tempfile
 import threading
+import time
 
 import httpx
 from pynput import keyboard
@@ -87,18 +88,33 @@ class Companion:
             preshot_ts = self._preshot_ts
             self._preshot_path = None
 
-        if preshot:
-            image_path = preshot
-            ts = preshot_ts
-        else:
-            ts = self.mpv.get_time_pos()
-            ok = self.mpv.screenshot(SCREENSHOT_PATH)
-            image_path = SCREENSHOT_PATH if ok else None
+        # Determine anchor timestamp
+        current_pos = self.mpv.get_time_pos()
+        t = preshot_ts if preshot else current_pos
 
-        mins, secs = int(ts // 60), int(ts % 60)
+        # Clean up preshot — we'll recapture all 3 frames via seek
+        if preshot and os.path.exists(preshot):
+            os.unlink(preshot)
+
+        # Capture 3 frames spread over 5 seconds for temporal context
+        timestamps = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        image_paths: list[str] = []
+        tmp_dir = tempfile.gettempdir()
+
+        for i, ts in enumerate(timestamps):
+            self.mpv.seek(ts)
+            time.sleep(0.15)
+            path = os.path.join(tmp_dir, f"mpv_companion_{i}_{int(ts * 1000)}.png")
+            if self.mpv.screenshot(path):
+                image_paths.append(path)
+
+        # Seek back to where the video was playing
+        self.mpv.seek(current_pos)
+
+        mins, secs = int(t // 60), int(t % 60)
         ts_str = f"{mins:02d}:{secs:02d}"
 
-        console.print(f"[dim]Frame: {ts_str} | Thinking...[/dim]")
+        console.print(f"[dim]Frames: {len(image_paths)} captured around {ts_str} | Thinking...[/dim]")
 
         if not self.history:
             prompt = (
@@ -111,7 +127,7 @@ class Companion:
             prompt = f"[{ts_str}] {user_input}"
 
         try:
-            response = self.ollama.query(prompt, image_path, self.history)
+            response = self.ollama.query(prompt, image_paths or None, self.history)
         except httpx.HTTPStatusError as e:
             response = f"Ollama HTTP error: {e.response.status_code}"
         except httpx.ConnectError:
@@ -119,8 +135,9 @@ class Companion:
         except Exception as e:
             response = f"Error: {e}"
         finally:
-            if preshot and os.path.exists(preshot):
-                os.unlink(preshot)
+            for p in image_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
 
         self.history.append({"role": "user", "content": prompt})
         self.history.append({"role": "assistant", "content": response})

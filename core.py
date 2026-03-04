@@ -108,6 +108,17 @@ class MpvIPC:
         result = self._send(["get_property", "media-title"])
         return str(result.get("data") or "Unknown")
 
+    def seek(self, seconds: float, mode: str = "absolute") -> bool:
+        result = self._send(["seek", str(seconds), mode])
+        return result.get("error") == "success"
+
+    def get_fps(self) -> float:
+        result = self._send(["get_property", "estimated-vf-fps"])
+        try:
+            return float(result.get("data") or 24.0)
+        except (TypeError, ValueError):
+            return 24.0
+
     def close(self):
         try:
             if self._sock:
@@ -129,13 +140,18 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=90)
 
-    def query(self, prompt: str, image_path: str | None, history: list) -> str:
+    def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         messages = list(history)
 
         msg: dict = {"role": "user", "content": prompt}
-        if image_path and os.path.exists(image_path):
-            with open(image_path, "rb") as f:
-                msg["images"] = [base64.b64encode(f.read()).decode()]
+        if image_paths:
+            images = []
+            for p in image_paths:
+                if os.path.exists(p):
+                    with open(p, "rb") as f:
+                        images.append(base64.b64encode(f.read()).decode())
+            if images:
+                msg["images"] = images
 
         messages.append(msg)
 
@@ -168,7 +184,7 @@ class OllamaClient:
 
 
 # ---------------------------------------------------------------------------
-# Cloud providers — unified interface: query(prompt, image_path, history)
+# Cloud providers — unified interface: query(prompt, image_paths, history)
 # ---------------------------------------------------------------------------
 def _read_image_b64(path: str) -> str:
     with open(path, "rb") as f:
@@ -197,7 +213,7 @@ class GeminiClient:
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
         self._client = httpx.Client(timeout=90)
 
-    def query(self, prompt: str, image_path: str | None, history: list) -> str:
+    def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
             return "Gemini API key not configured. Set GEMINI_API_KEY in your environment."
@@ -208,15 +224,17 @@ class GeminiClient:
             role = "user" if msg["role"] == "user" else "model"
             contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-        # Current message with optional image
+        # Current message with optional images
         parts: list = [{"text": prompt}]
-        if image_path and os.path.exists(image_path):
-            parts.append({
-                "inline_data": {
-                    "mime_type": "image/png",
-                    "data": _read_image_b64(image_path),
-                }
-            })
+        if image_paths:
+            for p in image_paths:
+                if os.path.exists(p):
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": _read_image_b64(p),
+                        }
+                    })
         contents.append({"role": "user", "parts": parts})
 
         try:
@@ -269,7 +287,7 @@ class OpenAIClient:
         self.base_url = "https://api.openai.com/v1"
         self._client = httpx.Client(timeout=90)
 
-    def query(self, prompt: str, image_path: str | None, history: list) -> str:
+    def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             return "OpenAI API key not configured. Set OPENAI_API_KEY in your environment."
@@ -280,12 +298,14 @@ class OpenAIClient:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         content: list = [{"type": "text", "text": prompt}]
-        if image_path and os.path.exists(image_path):
-            b64 = _read_image_b64(image_path)
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}"},
-            })
+        if image_paths:
+            for p in image_paths:
+                if os.path.exists(p):
+                    b64 = _read_image_b64(p)
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    })
 
         messages.append({"role": "user", "content": content})
 
@@ -335,7 +355,7 @@ class AnthropicClient:
         self.base_url = "https://api.anthropic.com/v1"
         self._client = httpx.Client(timeout=90)
 
-    def query(self, prompt: str, image_path: str | None, history: list) -> str:
+    def query(self, prompt: str, image_paths: list[str] | None, history: list) -> str:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             return "Anthropic API key not configured. Set ANTHROPIC_API_KEY in your environment."
@@ -345,15 +365,17 @@ class AnthropicClient:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         content: list = []
-        if image_path and os.path.exists(image_path):
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": _read_image_b64(image_path),
-                },
-            })
+        if image_paths:
+            for p in image_paths:
+                if os.path.exists(p):
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": _read_image_b64(p),
+                        },
+                    })
         content.append({"type": "text", "text": prompt})
 
         messages.append({"role": "user", "content": content})

@@ -9,9 +9,10 @@ import os
 import platform
 import sys
 import tempfile
+import time
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QImage, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -39,6 +40,14 @@ from core import (
 SYSTEM = platform.system()
 PANEL_WIDTH = 320
 COLLAPSED_WIDTH = 36
+
+
+def _downscale_image(path: str, max_width: int = 720):
+    """Downscale a PNG to max_width using QImage (in-place)."""
+    img = QImage(path)
+    if not img.isNull() and img.width() > max_width:
+        scaled = img.scaledToWidth(max_width, Qt.TransformationMode.SmoothTransformation)
+        scaled.save(path, "PNG")
 
 
 # ---------------------------------------------------------------------------
@@ -109,18 +118,30 @@ class QueryWorker(QThread):
         llm = s["llm"]
 
         try:
-            ts = mpv.get_time_pos()
+            t = mpv.get_time_pos()
         except Exception:
             self.finished.emit(
                 "Not connected to mpv yet. Open a video in mpv first.", "00:00"
             )
             return
 
-        shot = os.path.join(tempfile.gettempdir(), f"mpv_comp_{int(ts * 1000)}.png")
-        ok = mpv.screenshot(shot)
-        image_path = shot if ok else None
+        # Capture 3 frames spread over 5 seconds for temporal context
+        timestamps = [max(0.0, t - 5.0), max(0.0, t - 2.5), t]
+        image_paths: list[str] = []
+        tmp_dir = tempfile.gettempdir()
 
-        mins, secs = int(ts // 60), int(ts % 60)
+        for i, ts in enumerate(timestamps):
+            mpv.seek(ts)
+            time.sleep(0.15)
+            path = os.path.join(tmp_dir, f"mpv_comp_{i}_{int(ts * 1000)}.png")
+            if mpv.screenshot(path):
+                _downscale_image(path)
+                image_paths.append(path)
+
+        # Seek back to original position
+        mpv.seek(t)
+
+        mins, secs = int(t // 60), int(t % 60)
         ts_str = f"{mins:02d}:{secs:02d}"
 
         if not s["history"]:
@@ -134,12 +155,13 @@ class QueryWorker(QThread):
             prompt = f"[{ts_str}] {self.user_input}"
 
         try:
-            response = llm.query(prompt, image_path, s["history"])
+            response = llm.query(prompt, image_paths or None, s["history"])
         except Exception as e:
             response = f"Error: {e}"
         finally:
-            if image_path and os.path.exists(image_path):
-                os.unlink(image_path)
+            for p in image_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
 
         s["history"].append({"role": "user", "content": prompt})
         s["history"].append({"role": "assistant", "content": response})
