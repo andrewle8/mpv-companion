@@ -62,7 +62,14 @@ class MpvIPC:
             if SYSTEM == "Windows":
                 self._pipe.write(encoded)
                 self._pipe.flush()
-                raw = self._pipe.readline()
+                # readline() on named pipes has no timeout — use a thread
+                result_buf = [b""]
+                def _read():
+                    result_buf[0] = self._pipe.readline()
+                t = threading.Thread(target=_read, daemon=True)
+                t.start()
+                t.join(timeout=5.0)
+                raw = result_buf[0]
             else:
                 self._sock.sendall(encoded)
                 raw = b""
