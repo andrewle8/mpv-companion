@@ -28,9 +28,11 @@ from core import (
     DEFAULT_MODEL,
     MAX_HISTORY_TURNS,
     MPV_SOCKET,
+    PROVIDERS,
     SYSTEM_PROMPT,
     MpvIPC,
     OllamaClient,
+    create_client,
 )
 
 SYSTEM = platform.system()
@@ -103,7 +105,7 @@ class QueryWorker(QThread):
     def run(self):
         s = self.state
         mpv: MpvIPC = s["mpv"]
-        ollama: OllamaClient = s["ollama"]
+        llm = s["llm"]
 
         try:
             ts = mpv.get_time_pos()
@@ -131,7 +133,7 @@ class QueryWorker(QThread):
             prompt = f"[{ts_str}] {self.user_input}"
 
         try:
-            response = ollama.query(prompt, image_path, s["history"])
+            response = llm.query(prompt, image_path, s["history"])
         except Exception as e:
             response = f"Error: {e}"
         finally:
@@ -180,9 +182,12 @@ class CompanionPanel(QWidget):
         self._connected = False
         self._thinking_dots = 0
 
+        self._provider_id = "ollama"
+        self._ollama_url = ollama_url
+
         self.state = {
             "mpv": MpvIPC(MPV_SOCKET),
-            "ollama": OllamaClient(model, ollama_url),
+            "llm": create_client("ollama", model, base_url=ollama_url),
             "history": [],
             "media_title": "Unknown",
         }
@@ -271,6 +276,21 @@ class CompanionPanel(QWidget):
         sl.setContentsMargins(4, 6, 4, 6)
         sl.setSpacing(4)
 
+        # Provider selector
+        sl.addWidget(QLabel("Provider"))
+        self.provider_combo = QComboBox()
+        self.provider_combo.setObjectName("modelCombo")
+        for pid, info in PROVIDERS.items():
+            label = info["name"]
+            env = info["env_key"]
+            if env:
+                has_key = bool(os.environ.get(env, ""))
+                label += "  ✓" if has_key else "  (set " + env + ")"
+            self.provider_combo.addItem(label, pid)
+        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        sl.addWidget(self.provider_combo)
+
+        # Model selector
         sl.addWidget(QLabel("Model (choose a vision model for best results)"))
         self.model_combo = QComboBox()
         self.model_combo.setObjectName("modelCombo")
@@ -287,7 +307,9 @@ class CompanionPanel(QWidget):
         refresh_row.addStretch()
         sl.addLayout(refresh_row)
 
-        sl.addWidget(QLabel("Ollama server (leave as-is if running locally)"))
+        # Ollama URL (only relevant for Ollama provider)
+        self.url_label = QLabel("Ollama server (leave as-is if running locally)")
+        sl.addWidget(self.url_label)
         self.url_input = QLineEdit(ollama_url)
         self.url_input.setObjectName("urlInput")
         self.url_input.editingFinished.connect(self._on_url_changed)
@@ -474,12 +496,13 @@ class CompanionPanel(QWidget):
             )
 
     def _update_status(self):
-        model = self.state["ollama"].model
+        model = self.state["llm"].model
         title = self.state["media_title"]
-        self.status_label.setText(f"▶ {title}  ·  {model}")
+        provider = PROVIDERS[self._provider_id]["name"]
+        self.status_label.setText(f"▶ {title}  ·  {provider}: {model}")
 
     def _refresh_models(self):
-        names = self.state["ollama"].list_models()
+        names = self.state["llm"].list_models()
 
         self.model_combo.blockSignals(True)
         current = self.model_combo.currentText()
@@ -497,15 +520,40 @@ class CompanionPanel(QWidget):
             self.model_combo.setCurrentText(current)
         self.model_combo.blockSignals(False)
 
+    def _on_provider_changed(self, index: int):
+        pid = self.provider_combo.itemData(index)
+        if pid == self._provider_id:
+            return
+
+        # Close old client
+        self.state["llm"].close()
+
+        self._provider_id = pid
+        # Show/hide Ollama URL field
+        is_ollama = pid == "ollama"
+        self.url_label.setVisible(is_ollama)
+        self.url_input.setVisible(is_ollama)
+
+        # Create new client
+        if is_ollama:
+            self.state["llm"] = create_client("ollama", "", base_url=self._ollama_url)
+        else:
+            self.state["llm"] = create_client(pid)
+
+        self.state["history"].clear()
+        self._refresh_models()
+        self._update_status()
+
     def _on_model_changed(self, name: str):
         if name and not name.startswith("No models"):
-            self.state["ollama"].model = name
+            self.state["llm"].model = name
             self._update_status()
 
     def _on_url_changed(self):
         url = self.url_input.text().strip()
         if url:
-            self.state["ollama"].base_url = url.rstrip("/")
+            self._ollama_url = url.rstrip("/")
+            self.state["llm"].base_url = self._ollama_url
             self._refresh_models()
 
     def _toggle_settings(self):
@@ -608,7 +656,7 @@ class CompanionPanel(QWidget):
             self.worker.finished.disconnect()
             self.worker.wait(3000)
         self.state["mpv"].close()
-        self.state["ollama"].close()
+        self.state["llm"].close()
         event.accept()
 
 

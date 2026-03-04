@@ -29,16 +29,27 @@ pywin32 is not required; named pipe access uses built-in file I/O.
 
 ---
 
-## Ollama model setup
+## Model setup
 
-Recommended (default):
+### Ollama (local, default)
+
 ```bash
-ollama pull qwen3.5:7b
+ollama pull qwen3.5:7b        # recommended default
+ollama pull qwen3.5:14b       # larger, better reasoning
 ```
 
-Larger option for better reasoning:
+### Cloud providers (optional)
+
+Set an API key to enable. Switch providers in the ⚙ settings panel.
+
+| Provider | Env variable | Recommended model |
+|---|---|---|
+| Google Gemini | `GEMINI_API_KEY` | gemini-2.0-flash (fast, cheap, great vision) |
+| OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
+| Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 |
+
 ```bash
-ollama pull qwen3.5:14b
+export GEMINI_API_KEY="your-key-here"    # add to ~/.zshrc or ~/.bashrc
 ```
 
 ---
