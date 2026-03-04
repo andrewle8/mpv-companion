@@ -777,12 +777,14 @@ class CompanionPanel(QWidget):
 
     # -- cleanup ------------------------------------------------------------
     def closeEvent(self, event):
-        # Collapse instead of closing — right-click > Quit to actually exit
-        if not self.collapsed:
-            event.ignore()
-            self._toggle_collapse()
+        # If mpv isn't connected or panel is already collapsed, quit for real
+        if not self._connected or self.collapsed:
+            event.accept()
+            self._quit()
             return
+        # First close collapses instead
         event.ignore()
+        self._toggle_collapse()
 
     def _quit(self):
         self.snap_timer.stop()
