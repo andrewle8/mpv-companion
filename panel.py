@@ -457,8 +457,8 @@ class CompanionPanel(QWidget):
                 selection-background-color: rgba(100, 180, 255, 60);
             }}
             #inputBar {{
-                background-color: rgba(255, 255, 255, 6);
-                color: #d4d4d4;
+                background-color: rgba(255, 255, 255, 15);
+                color: #f0f0f0;
                 border: 1px solid rgba(255, 255, 255, 15);
                 border-radius: 8px;
                 padding: 8px 10px;
@@ -466,7 +466,7 @@ class CompanionPanel(QWidget):
             }}
             #inputBar:focus {{
                 border: 1px solid rgba(100, 180, 255, 80);
-                background-color: rgba(255, 255, 255, 8);
+                background-color: rgba(255, 255, 255, 20);
             }}
             #inputBar[readOnly="true"] {{
                 background-color: rgba(255, 255, 255, 3);
