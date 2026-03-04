@@ -32,13 +32,7 @@ DEFAULT_MODEL = "gemma3:4b"
 HOTKEY_DISPLAY = "Ctrl+Space"
 MAX_HISTORY_TURNS = 20
 
-SYSTEM_PROMPT = (
-    "You are a cinematic AI companion watching a film with the user. "
-    "When shown a video frame, analyze composition, lighting, color, "
-    "cinematography, narrative context, and emotional tone. "
-    "Be conversational, insightful, and concise. "
-    "The user may ask about technique, story, symbolism, or just react to what they see."
-)
+SYSTEM_PROMPT = "You are watching a video with the user. Answer their questions about what you see."
 
 
 # ---------------------------------------------------------------------------
