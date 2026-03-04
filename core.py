@@ -300,6 +300,10 @@ class GeminiClient:
             if code == 429:
                 return "Error: Gemini rate limit reached. Wait a moment and try again."
             return f"Error: Gemini error ({code}). Try again or switch providers."
+        except httpx.ConnectError:
+            return "Error: Cannot reach Gemini. Check your network connection."
+        except httpx.TimeoutException:
+            return "Error: Gemini request timed out."
 
     def list_models(self) -> list[str]:
         api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -361,7 +365,10 @@ class OpenAIClient:
                 json={"model": self.model, "messages": messages},
             )
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            choices = r.json().get("choices", [])
+            if not choices:
+                return "Error: OpenAI returned no response (content filter)."
+            return choices[0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 401:
@@ -369,6 +376,10 @@ class OpenAIClient:
             if code == 429:
                 return "Error: OpenAI rate limit reached. Wait a moment and try again."
             return f"Error: OpenAI error ({code}). Try again or switch providers."
+        except httpx.ConnectError:
+            return "Error: Cannot reach OpenAI. Check your network connection."
+        except httpx.TimeoutException:
+            return "Error: OpenAI request timed out."
 
     def list_models(self) -> list[str]:
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -452,6 +463,10 @@ class AnthropicClient:
             if code == 429:
                 return "Error: Anthropic rate limit reached. Wait a moment and try again."
             return f"Error: Anthropic error ({code}). Try again or switch providers."
+        except httpx.ConnectError:
+            return "Error: Cannot reach Anthropic. Check your network connection."
+        except httpx.TimeoutException:
+            return "Error: Anthropic request timed out."
 
     def list_models(self) -> list[str]:
         return CLOUD_MODELS["anthropic"]
