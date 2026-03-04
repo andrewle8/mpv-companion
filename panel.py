@@ -11,11 +11,14 @@ import sys
 import tempfile
 import time
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import (
+    Qt, QTimer, QThread, QPropertyAnimation, QEasingCurve, pyqtSignal,
+)
 from PyQt6.QtGui import QAction, QImage, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QMenu,
     QLabel,
@@ -200,6 +203,26 @@ class DragHeader(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Multi-line chat input: Enter sends, Shift+Enter inserts newline
+# ---------------------------------------------------------------------------
+class _ChatInput(QTextEdit):
+    def __init__(self, on_submit, parent=None):
+        super().__init__(parent)
+        self._on_submit = on_submit
+        self.setFixedHeight(56)
+        self.setAcceptRichText(False)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                super().keyPressEvent(event)  # insert newline
+            else:
+                self._on_submit()
+        else:
+            super().keyPressEvent(event)
+
+
+# ---------------------------------------------------------------------------
 # Main panel
 # ---------------------------------------------------------------------------
 class CompanionPanel(QWidget):
@@ -208,7 +231,6 @@ class CompanionPanel(QWidget):
         self.collapsed = False
         self.worker = None
         self._connected = False
-        self._thinking_dots = 0
 
         self._provider_id = "ollama"
         self._ollama_url = ollama_url
@@ -226,9 +248,16 @@ class CompanionPanel(QWidget):
 
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._on_escape)
 
-        # Animated "Thinking" indicator
-        self._thinking_timer = QTimer()
-        self._thinking_timer.timeout.connect(self._animate_thinking)
+        # Pulsing opacity animation on header status during queries
+        self._status_opacity = QGraphicsOpacityEffect(self.header_status)
+        self.header_status.setGraphicsEffect(self._status_opacity)
+        self._status_opacity.setOpacity(1.0)
+        self._pulse_anim = QPropertyAnimation(self._status_opacity, b"opacity")
+        self._pulse_anim.setDuration(900)
+        self._pulse_anim.setStartValue(1.0)
+        self._pulse_anim.setEndValue(0.3)
+        self._pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._pulse_anim.finished.connect(self._pulse_reverse)
 
         # Snap to mpv on a timer
         self.snap_timer = QTimer()
@@ -267,9 +296,10 @@ class CompanionPanel(QWidget):
         hl = QHBoxLayout(self.header)
         hl.setContentsMargins(0, 8, 0, 4)
 
-        self.title_label = QLabel("mpv Companion")
-        self.title_label.setObjectName("title")
-        hl.addWidget(self.title_label)
+        # Status text is the header text (provider + model + media)
+        self.header_status = QLabel("Looking for mpv...")
+        self.header_status.setObjectName("headerStatus")
+        hl.addWidget(self.header_status)
         hl.addStretch()
 
         # Clear chat button
@@ -303,7 +333,6 @@ class CompanionPanel(QWidget):
         sl.setContentsMargins(4, 6, 4, 6)
         sl.setSpacing(4)
 
-        # Provider selector
         sl.addWidget(QLabel("Provider"))
         self.provider_combo = QComboBox()
         self.provider_combo.setObjectName("modelCombo")
@@ -317,8 +346,7 @@ class CompanionPanel(QWidget):
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         sl.addWidget(self.provider_combo)
 
-        # Model selector
-        sl.addWidget(QLabel("Model (choose a vision model for best results)"))
+        sl.addWidget(QLabel("Model"))
         self.model_combo = QComboBox()
         self.model_combo.setObjectName("modelCombo")
         self.model_combo.setEditable(True)
@@ -334,8 +362,7 @@ class CompanionPanel(QWidget):
         refresh_row.addStretch()
         sl.addLayout(refresh_row)
 
-        # Ollama URL (only relevant for Ollama provider)
-        self.url_label = QLabel("Ollama server (leave as-is if running locally)")
+        self.url_label = QLabel("Ollama URL")
         sl.addWidget(self.url_label)
         self.url_input = QLineEdit(ollama_url)
         self.url_input.setObjectName("urlInput")
@@ -345,11 +372,6 @@ class CompanionPanel(QWidget):
         self.settings_widget.hide()
         cl.addWidget(self.settings_widget)
 
-        # status
-        self.status_label = QLabel("Looking for mpv...")
-        self.status_label.setObjectName("status")
-        cl.addWidget(self.status_label)
-
         # chat display
         self.chat = QTextEdit()
         self.chat.setReadOnly(True)
@@ -358,10 +380,9 @@ class CompanionPanel(QWidget):
 
         # input row
         inp = QHBoxLayout()
-        self.input_bar = QLineEdit()
+        self.input_bar = _ChatInput(on_submit=self._on_submit)
         self.input_bar.setObjectName("inputBar")
         self.input_bar.setPlaceholderText("Ask about this scene...")
-        self.input_bar.returnPressed.connect(self._on_submit)
         inp.addWidget(self.input_bar)
 
         self.send_btn = QPushButton("Send")
@@ -391,99 +412,100 @@ class CompanionPanel(QWidget):
         root.addWidget(self.collapsed_strip)
 
         # Disable input until connected
-        self.input_bar.setEnabled(False)
+        self.input_bar.setReadOnly(True)
         self.send_btn.setEnabled(False)
 
     # -- stylesheet ---------------------------------------------------------
     def _apply_style(self):
-        self.setStyleSheet("""
-            #container {
+        font = "-apple-system, 'Segoe UI', sans-serif"
+        self.setStyleSheet(f"""
+            * {{ font-family: {font}; }}
+            #container {{
                 background-color: rgba(15, 15, 20, 235);
                 border-radius: 12px;
                 border: 1px solid rgba(255, 255, 255, 12);
-            }
-            #collapsedStrip {
+            }}
+            #collapsedStrip {{
                 background-color: rgba(15, 15, 20, 235);
                 border-radius: 8px;
                 border: 1px solid rgba(255, 255, 255, 12);
-            }
-            #settingsPanel {
+            }}
+            #settingsPanel {{
                 background-color: rgba(255, 255, 255, 4);
                 border-top: 1px solid rgba(255, 255, 255, 8);
                 border-bottom: 1px solid rgba(255, 255, 255, 8);
                 border-radius: 6px;
                 margin: 2px 0;
-            }
-            #title {
-                color: rgba(255, 255, 255, 220);
-                font-size: 13px;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-            }
-            #status {
-                color: rgba(255, 255, 255, 80);
-                font-size: 10px;
-                padding: 2px 0;
-            }
-            QLabel {
+            }}
+            #headerStatus {{
+                color: rgba(255, 255, 255, 150);
+                font-size: 11px;
+            }}
+            QLabel {{
                 color: rgba(255, 255, 255, 100);
-                font-size: 10px;
-            }
-            #chat {
+                font-size: 11px;
+            }}
+            #chat {{
                 background-color: rgba(0, 0, 0, 40);
-                color: #d8d8d8;
+                color: #d4d4d4;
                 border: none;
                 border-radius: 8px;
-                font-size: 13px;
+                font-size: 14px;
                 padding: 10px;
-                line-height: 1.5;
                 selection-background-color: rgba(100, 180, 255, 60);
-            }
-            #inputBar, #urlInput {
+            }}
+            #inputBar {{
                 background-color: rgba(255, 255, 255, 6);
-                color: #d8d8d8;
+                color: #d4d4d4;
                 border: 1px solid rgba(255, 255, 255, 15);
                 border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 13px;
-            }
-            #inputBar:focus, #urlInput:focus {
+                padding: 8px 10px;
+                font-size: 14px;
+            }}
+            #inputBar:focus {{
                 border: 1px solid rgba(100, 180, 255, 80);
                 background-color: rgba(255, 255, 255, 8);
-            }
-            #inputBar:disabled {
-                background-color: rgba(255, 255, 255, 3);
-                color: rgba(200, 200, 200, 40);
-                border-color: rgba(255, 255, 255, 8);
-            }
-            #modelCombo {
+            }}
+            #urlInput {{
                 background-color: rgba(255, 255, 255, 6);
-                color: #d8d8d8;
+                color: #d4d4d4;
                 border: 1px solid rgba(255, 255, 255, 15);
                 border-radius: 6px;
                 padding: 5px 8px;
                 font-size: 11px;
-            }
-            #modelCombo QAbstractItemView {
+            }}
+            #urlInput:focus {{
+                border: 1px solid rgba(100, 180, 255, 80);
+                background-color: rgba(255, 255, 255, 8);
+            }}
+            #modelCombo {{
+                background-color: rgba(255, 255, 255, 6);
+                color: #d4d4d4;
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 6px;
+                padding: 5px 8px;
+                font-size: 11px;
+            }}
+            #modelCombo QAbstractItemView {{
                 background-color: rgb(25, 25, 30);
-                color: #d8d8d8;
+                color: #d4d4d4;
                 border: 1px solid rgba(255, 255, 255, 12);
                 selection-background-color: rgba(100, 180, 255, 50);
                 padding: 2px;
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 background-color: rgba(255, 255, 255, 6);
                 color: rgba(255, 255, 255, 140);
                 border: 1px solid rgba(255, 255, 255, 12);
                 border-radius: 6px;
                 font-size: 11px;
                 padding: 4px 8px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: rgba(255, 255, 255, 15);
                 color: rgba(255, 255, 255, 200);
-            }
-            #sendBtn {
+            }}
+            #sendBtn {{
                 background-color: rgba(100, 180, 255, 25);
                 color: rgba(100, 180, 255, 220);
                 border: 1px solid rgba(100, 180, 255, 40);
@@ -491,28 +513,28 @@ class CompanionPanel(QWidget):
                 font-weight: 600;
                 padding: 6px 14px;
                 border-radius: 8px;
-            }
-            #sendBtn:hover {
+            }}
+            #sendBtn:hover {{
                 background-color: rgba(100, 180, 255, 45);
-            }
-            #sendBtn:disabled {
+            }}
+            #sendBtn:disabled {{
                 background-color: rgba(255, 255, 255, 3);
                 color: rgba(100, 180, 255, 30);
                 border-color: rgba(255, 255, 255, 8);
-            }
-            #clearBtn {
+            }}
+            #clearBtn {{
                 padding: 3px 10px;
                 font-size: 10px;
                 color: rgba(255, 255, 255, 70);
                 border: none;
-            }
-            #clearBtn:hover {
+            }}
+            #clearBtn:hover {{
                 color: rgba(255, 255, 255, 150);
-            }
-            #refreshBtn {
+            }}
+            #refreshBtn {{
                 padding: 5px 12px;
                 font-size: 11px;
-            }
+            }}
         """)
 
     # -- connections --------------------------------------------------------
@@ -521,18 +543,16 @@ class CompanionPanel(QWidget):
             self.state["mpv"].connect()
             self.state["media_title"] = self.state["mpv"].get_media_title()
             self._connected = True
-            self.input_bar.setEnabled(True)
-            self.send_btn.setEnabled(True)
+            self._input_set_enabled(True)
             self.input_bar.setFocus()
             self._update_status()
-            # Welcome message
             title = self.state["media_title"]
             self._append_msg(
-                "Companion", "#7dcfa0",
-                f"Connected to {title}. Ask me anything about what you're watching."
+                "assistant",
+                f"Connected to {title}. Ask me anything about what you're watching.",
             )
         except (ConnectionRefusedError, FileNotFoundError, OSError):
-            self.status_label.setText(
+            self.header_status.setText(
                 "mpv isn't open yet — start a video in mpv, then relaunch"
             )
 
@@ -540,7 +560,7 @@ class CompanionPanel(QWidget):
         model = self.state["llm"].model
         title = self.state["media_title"]
         provider = PROVIDERS[self._provider_id]["name"]
-        self.status_label.setText(f"▶ {title}  ·  {provider}: {model}")
+        self.header_status.setText(f"▶ {title}  ·  {provider}: {model}")
 
     def _refresh_models(self):
         names = self.state["llm"].list_models()
@@ -643,22 +663,30 @@ class CompanionPanel(QWidget):
 
     # -- thinking animation -------------------------------------------------
     def _start_thinking(self):
-        self._thinking_dots = 0
-        self.status_label.setText("Thinking")
-        self._thinking_timer.start(400)
+        self.header_status.setText("Thinking...")
+        self._pulse_anim.setDirection(QPropertyAnimation.Direction.Forward)
+        self._pulse_anim.start()
 
     def _stop_thinking(self):
-        self._thinking_timer.stop()
+        self._pulse_anim.stop()
+        self._status_opacity.setOpacity(1.0)
         self._update_status()
 
-    def _animate_thinking(self):
-        self._thinking_dots = (self._thinking_dots + 1) % 4
-        self.status_label.setText("Thinking" + "." * self._thinking_dots)
+    def _pulse_reverse(self):
+        if self._pulse_anim.direction() == QPropertyAnimation.Direction.Forward:
+            self._pulse_anim.setDirection(QPropertyAnimation.Direction.Backward)
+        else:
+            self._pulse_anim.setDirection(QPropertyAnimation.Direction.Forward)
+        self._pulse_anim.start()
 
     # -- input handling -----------------------------------------------------
     def _on_escape(self):
         self.input_bar.clear()
         self.input_bar.setFocus()
+
+    def _input_set_enabled(self, enabled: bool):
+        self.input_bar.setReadOnly(not enabled)
+        self.send_btn.setEnabled(enabled)
 
     def _clear_chat(self):
         if self.worker and self.worker.isRunning():
@@ -668,17 +696,16 @@ class CompanionPanel(QWidget):
         self._update_status()
 
     def _on_submit(self):
-        text = self.input_bar.text().strip()
+        text = self.input_bar.toPlainText().strip()
         if not text or (self.worker and self.worker.isRunning()):
             return
 
         self.input_bar.clear()
-        self.input_bar.setEnabled(False)
-        self.send_btn.setEnabled(False)
+        self._input_set_enabled(False)
         self.clear_btn.setEnabled(False)
         self._start_thinking()
 
-        self._append_msg("You", "#88ccff", text)
+        self._append_msg("user", text)
 
         self.worker = QueryWorker(self.state, text)
         self.worker.finished.connect(self._on_response)
@@ -687,27 +714,42 @@ class CompanionPanel(QWidget):
 
     def _on_response(self, response: str, ts: str):
         self._stop_thinking()
-        self._append_msg(f"Companion · {ts}", "#7dcfa0", response)
-        self.input_bar.setEnabled(True)
-        self.send_btn.setEnabled(True)
+        self._append_msg("assistant", response, ts)
+        self._input_set_enabled(True)
         self.clear_btn.setEnabled(True)
         self.input_bar.setFocus()
 
-    def _append_msg(self, sender: str, color: str, text: str):
+    def _append_msg(self, role: str, text: str, ts: str = ""):
         escaped = (
             text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\n", "<br>")
         )
-        self.chat.append(
-            f'<div style="margin-top:10px; padding-bottom:8px; '
-            f'border-bottom:1px solid rgba(255,255,255,6);">'
-            f'<div style="color:{color}; font-size:11px; font-weight:600; '
-            f'margin-bottom:4px; opacity:0.85;">{sender}</div>'
-            f'<div style="color:#d0d0d0; font-size:13px; line-height:1.6;">{escaped}</div>'
-            f'</div>'
+        ts_html = (
+            f'<span style="color:rgba(255,255,255,0.35); font-weight:400;'
+            f' margin-left:6px;">{ts}</span>' if ts else ""
         )
+
+        if role == "user":
+            self.chat.append(
+                f'<div style="margin-top:14px; background:rgba(100,180,255,0.08);'
+                f' border-radius:8px; padding:8px 10px;">'
+                f'<div style="text-align:right; font-size:11px; color:rgba(255,255,255,0.5);'
+                f' margin-bottom:4px;">You{ts_html}</div>'
+                f'<div style="color:#d4d4d4; font-size:14px; line-height:1.6;">{escaped}</div>'
+                f'</div>'
+            )
+        else:
+            self.chat.append(
+                f'<div style="margin-top:14px; border-left:2px solid rgba(125,207,160,0.5);'
+                f' padding:4px 0 4px 10px;">'
+                f'<div style="font-size:11px; color:rgba(255,255,255,0.5);'
+                f' margin-bottom:4px;">Companion{ts_html}</div>'
+                f'<div style="color:#d4d4d4; font-size:14px; line-height:1.6;">{escaped}</div>'
+                f'</div>'
+            )
+
         sb = self.chat.verticalScrollBar()
         sb.setValue(sb.maximum())
 
@@ -734,7 +776,7 @@ class CompanionPanel(QWidget):
 
     def _quit(self):
         self.snap_timer.stop()
-        self._thinking_timer.stop()
+        self._pulse_anim.stop()
         if self.worker and self.worker.isRunning():
             self.worker.finished.disconnect()
             self.worker.wait(3000)
