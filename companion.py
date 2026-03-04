@@ -199,6 +199,8 @@ class Companion:
 
                 if user_input.lower() == "/clear":
                     self.history.clear()
+                    if self._preshot_path and os.path.exists(self._preshot_path):
+                        os.unlink(self._preshot_path)
                     self._preshot_path = None
                     console.print("[yellow]History cleared.[/yellow]")
                     continue

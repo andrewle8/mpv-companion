@@ -610,6 +610,8 @@ class CompanionPanel(QWidget):
     def _on_url_changed(self):
         if self.worker and self.worker.isRunning():
             return
+        if self._provider_id != "ollama":
+            return
         url = self.url_input.text().strip()
         if url:
             self._ollama_url = url.rstrip("/")
