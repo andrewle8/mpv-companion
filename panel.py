@@ -11,11 +11,12 @@ import sys
 import tempfile
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QHBoxLayout,
+    QMenu,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -662,8 +663,28 @@ class CompanionPanel(QWidget):
         sb = self.chat.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    # -- context menu -------------------------------------------------------
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: rgb(30, 30, 35); color: #e0e0e0; }
+            QMenu::item:selected { background-color: rgba(136, 204, 255, 80); }
+        """)
+        quit_action = QAction("Quit Companion", self)
+        quit_action.triggered.connect(self._quit)
+        menu.addAction(quit_action)
+        menu.exec(event.globalPos())
+
     # -- cleanup ------------------------------------------------------------
     def closeEvent(self, event):
+        # Collapse instead of closing — right-click > Quit to actually exit
+        if not self.collapsed:
+            event.ignore()
+            self._toggle_collapse()
+            return
+        event.ignore()
+
+    def _quit(self):
         self.snap_timer.stop()
         self._thinking_timer.stop()
         if self.worker and self.worker.isRunning():
@@ -671,7 +692,7 @@ class CompanionPanel(QWidget):
             self.worker.wait(3000)
         self.state["mpv"].close()
         self.state["llm"].close()
-        event.accept()
+        QApplication.quit()
 
 
 # ---------------------------------------------------------------------------
