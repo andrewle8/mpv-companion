@@ -1,8 +1,8 @@
 # mpv AI Companion
 
-Ask questions about what you're watching. Grabs frames from mpv over IPC, sends them to an LLM, shows the response in a side panel or terminal.
+Ask questions about what you're watching. Captures the current frame from mpv, sends it to a vision model, and shows the response in a floating side panel or your terminal.
 
-Works on Windows and macOS. Each query captures the current frame and sends it to the model.
+Windows and macOS.
 
 ## Requirements
 
@@ -18,17 +18,15 @@ pip install -r requirements.txt
 pip install .
 ```
 
-**macOS**: pynput needs Accessibility permissions for hotkeys. System Settings > Privacy & Security > Accessibility > add Terminal.
-
-**Windows**: run as normal user, no elevation needed. pywin32 is not required.
+**macOS**: pynput needs Accessibility permissions. System Settings > Privacy & Security > Accessibility > add Terminal.
 
 ## Models
 
-You need a **vision model**. Text-only models won't see anything. Pick any vision-capable model from [Ollama's library](https://ollama.com/search?c=vision) and switch models in the panel's settings dropdown.
+You need a **vision model** -- text-only models can't see the frame. Pick any vision-capable model from [Ollama's library](https://ollama.com/search?c=vision) and switch models in the panel's settings dropdown.
 
 ### Cloud providers (GUI only)
 
-Set an API key to unlock. Switch providers in the settings panel.
+Set an API key to unlock cloud models. Switch providers in the settings panel.
 
 | Provider | Env variable | Model |
 |---|---|---|
@@ -52,15 +50,16 @@ mpv --input-ipc-server=/tmp/mpvsocket your_film.mkv
 mpv --input-ipc-server=\\.\pipe\mpvsocket your_film.mkv
 ```
 
-Tip: alias this so you don't have to type it every time.
+Tip: add an alias so you don't type the IPC flag every time.
 
 ### 2. Start the companion
 
 ```bash
 python panel.py              # GUI panel (snaps to mpv window)
-python companion.py          # CLI mode
+python companion.py          # CLI mode (Ollama only)
 ```
 
+Options:
 ```
 --model gemma3:4b           pick a different model
 --ollama-url http://...      remote Ollama server
@@ -70,19 +69,9 @@ python companion.py          # CLI mode
 
 | | |
 |---|---|
-| Type + Enter | Captures the current frame and sends to the model |
-| Ctrl+Space (CLI) | Pre-capture a frame, then type your question |
+| Type + Enter | Capture the current frame and ask the model |
+| Ctrl+Space (CLI) | Freeze-frame first, then type your question |
 | `/clear` | Reset conversation |
 | `/quit` / Ctrl+C | Exit |
 
-The model remembers earlier questions for the whole session. Only text history is sent on follow-ups (no old images) to keep things fast.
-
-## Architecture
-
-```
-mpv
-  IPC socket / named pipe
-    core.py    MpvIPC, 4 LLM clients (Ollama, Gemini, OpenAI, Anthropic)
-      panel.py       PyQt6 floating panel, snaps to mpv, model picker
-      companion.py   CLI fallback (Ollama only)
-```
+The model remembers earlier questions for the whole session. Only text history is sent on follow-ups (no old images) to keep requests fast.
